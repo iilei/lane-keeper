@@ -1,0 +1,3 @@
+readiness: ready
+workflow: release
+target: master

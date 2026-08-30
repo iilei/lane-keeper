@@ -20,25 +20,31 @@ The current executable implements:
 
 - `lane-keeper version`;
 - `lane-keeper config-introspection --lint <toml-files...>` for TOML validation,
-  typed Lane-Keeper schema and reference validation, Canonical Starlark syntax
-  parsing, and custom date-layout previews;
+  typed Lane-Keeper schema and reference validation, structural Starlark syntax
+  validation of every configured check predicate (regardless of TOML string
+  quoting style), and custom date-layout previews;
 - `lane-keeper config-introspection --fmt <toml-files...>` for in-place
-  Buildifier formatting of embedded predicates;
+  Buildifier formatting of embedded predicates (limited to the documented
+  ordinary triple-quoted representation, since splicing requires literal text
+  positions);
 - the `git-keep-lane` forwarding executable;
 - internal template context and named date-layout primitives;
 - typed workflow lookup, default merging, ordered check resolution, and
   `literal`/`git-remote-head` target-branch resolution;
 - read-only Git inspection for commit resolution, Git-native abbreviated SHAs,
-  newest reachable tags by creator date, and NUL-safe changed file paths;
+  newest reachable tags by creator date, author/committer dates, and NUL-safe
+  changed file paths;
 - bounded inline Starlark execution with immutable workflow/input contexts,
-  read-only Git host functions, and terminating `succeed()`/`fail()` results;
-- `lane-keeper readiness check --workflow <name>` with repository config
-  discovery, ordered check evaluation, human-readable output, and predicate
-  exit-code propagation.
-
-`readiness await`, `branch`, and `mr` remain unimplemented. Template rendering
-also remains planned work. The example configuration below documents both the
-implemented readiness contract and planned rendering commands.
+  read-only Git host functions, a namespaced `shared` block for reusable
+  predicate helpers, and terminating `succeed()`/`fail()` results;
+- `lane-keeper readiness check --workflow <name>` and
+  `lane-keeper readiness await --workflow <name>` with repository config
+  discovery, ordered check evaluation, and predicate exit-code propagation;
+- `lane-keeper branch name --workflow <name>` and
+  `lane-keeper mr render --workflow <name>` for deterministic branch and
+  merge-request template rendering;
+- human-readable text output (default) or stable JSON via `--output json` on
+  all four `readiness`/`branch`/`mr` commands.
 
 `--lint` is self-contained. `--fmt` requires the external `buildifier`
 executable on `PATH`; the published formatting hook installs it in its isolated

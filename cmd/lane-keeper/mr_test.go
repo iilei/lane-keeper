@@ -10,14 +10,14 @@ import (
 	"testing"
 )
 
-const mrRenderCommand = "render"
+const (
+	mrRenderCommand = "render"
+	mrTitleTemplate = `{{ if .ticket }}{{ .ticket }}: {{ end }}Prepare {{ .environment }} contribution`
+	mrBodyTemplate  = "Source commit: {{ .shortSha }}\nTarget branch: {{ .targetBranch }}"
+)
 
 func TestRunMRRenderRendersTitleAndBody(t *testing.T) {
-	paths := mrRepository(
-		t,
-		`{{ if .ticket }}{{ .ticket }}: {{ end }}Prepare {{ .environment }} contribution`,
-		"Source commit: {{ .shortSha }}\nTarget branch: {{ .targetBranch }}",
-	)
+	paths := mrRepository(t)
 	var stdout, stderr bytes.Buffer
 
 	exitCode := runMR(
@@ -43,11 +43,7 @@ func TestRunMRRenderRendersTitleAndBody(t *testing.T) {
 }
 
 func TestRunMRRenderRendersJSON(t *testing.T) {
-	paths := mrRepository(
-		t,
-		`{{ if .ticket }}{{ .ticket }}: {{ end }}Prepare {{ .environment }} contribution`,
-		"Source commit: {{ .shortSha }}\nTarget branch: {{ .targetBranch }}",
-	)
+	paths := mrRepository(t)
 	var stdout, stderr bytes.Buffer
 
 	exitCode := runMR(
@@ -67,6 +63,48 @@ func TestRunMRRenderRendersJSON(t *testing.T) {
 	if got, want := stdout.String(), `"title":"ABC-123: Prepare staging contribution"`; !strings.Contains(got, want) {
 		t.Errorf("stdout = %q, want to contain %q", got, want)
 	}
+}
+
+func TestRunMRRenderGoldenText(t *testing.T) {
+	paths := mrRepository(t)
+	var stdout, stderr bytes.Buffer
+
+	exitCode := runMR(
+		context.Background(),
+		[]string{
+			mrRenderCommand, workflowFlag, releaseWorkflow, configFlag, paths.configPath,
+			ticketFlag, ticketValue, environmentFlag, stagingEnvironment,
+		},
+		&stdout,
+		&stderr,
+		func() (string, error) { return paths.repositoryRoot, nil },
+		noEnvironment,
+	)
+	if exitCode != 0 {
+		t.Fatalf("runMR() exit code = %d, want 0; stderr = %q", exitCode, stderr.String())
+	}
+	assertGolden(t, "mr_render_text", normalizeGolden(stdout.String()))
+}
+
+func TestRunMRRenderGoldenJSON(t *testing.T) {
+	paths := mrRepository(t)
+	var stdout, stderr bytes.Buffer
+
+	exitCode := runMR(
+		context.Background(),
+		[]string{
+			mrRenderCommand, workflowFlag, releaseWorkflow, configFlag, paths.configPath,
+			ticketFlag, ticketValue, environmentFlag, stagingEnvironment, outputFlag, jsonFormat,
+		},
+		&stdout,
+		&stderr,
+		func() (string, error) { return paths.repositoryRoot, nil },
+		noEnvironment,
+	)
+	if exitCode != 0 {
+		t.Fatalf("runMR() exit code = %d, want 0; stderr = %q", exitCode, stderr.String())
+	}
+	assertGolden(t, "mr_render_json", normalizeGolden(stdout.String()))
 }
 
 func TestRunMRRenderRequiresMergeRequestTemplate(t *testing.T) {
@@ -91,7 +129,7 @@ func TestRunMRRequiresWorkflow(t *testing.T) {
 	}
 }
 
-func mrRepository(t *testing.T, title, body string) readinessRepositoryPaths {
+func mrRepository(t *testing.T) readinessRepositoryPaths {
 	t.Helper()
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("git is not available")
@@ -113,8 +151,8 @@ remote = "origin"
 predicate = """succeed()"""
 
 [_.lane-keeper.templates.merge-request-message]
-title = "` + title + `"
-body = "` + strings.ReplaceAll(body, "\n", `\n`) + `"
+title = "` + mrTitleTemplate + `"
+body = "` + strings.ReplaceAll(mrBodyTemplate, "\n", `\n`) + `"
 
 [_.lane-keeper.workflows.release]
 checks = ["ready"]

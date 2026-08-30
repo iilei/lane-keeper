@@ -100,6 +100,12 @@ type (
 		Interval time.Duration
 		Timeout  time.Duration
 	}
+
+	// ToolVersionPin describes a repository's pinned lane-keeper tool version.
+	ToolVersionPin struct {
+		Version string
+		Found   bool
+	}
 )
 
 // Parse reads only the [_.lane-keeper] subtree and ignores unrelated Mise configuration.
@@ -132,6 +138,31 @@ func Parse(content string) (ParseResult, error) {
 	return ParseResult{Model: &model, Found: true}, nil
 }
 
+// PinnedToolVersion reads the repository-pinned lane-keeper version from a
+// Mise TOML document's [tools] table, such as `lane-keeper = "0.4.2"`. It
+// returns Found=false if [tools].lane-keeper is absent or not a plain string
+// (for example, an inline-table version specifier is left unrecognized rather
+// than misparsed).
+func PinnedToolVersion(content string) (ToolVersionPin, error) {
+	var document map[string]any
+	if err := toml.Unmarshal([]byte(content), &document); err != nil {
+		return ToolVersionPin{}, fmt.Errorf("toml parse error: %w", err)
+	}
+	tools, isMap := document["tools"].(map[string]any)
+	if !isMap {
+		return ToolVersionPin{}, nil
+	}
+	value, present := tools["lane-keeper"]
+	if !present {
+		return ToolVersionPin{}, nil
+	}
+	pinnedVersion, isString := value.(string)
+	if !isString || pinnedVersion == "" {
+		return ToolVersionPin{}, nil
+	}
+	return ToolVersionPin{Version: pinnedVersion, Found: true}, nil
+}
+
 // Validate returns all semantic configuration errors in deterministic order.
 func (model *Model) Validate() []error {
 	if model == nil {
@@ -157,8 +188,13 @@ func (model *Model) Validate() []error {
 		}
 	}
 	for _, name := range slices.Sorted(maps.Keys(model.Checks)) {
-		if strings.TrimSpace(model.Checks[name].Predicate) == "" {
+		predicate := strings.TrimSpace(model.Checks[name].Predicate)
+		if predicate == "" {
 			errs = append(errs, fmt.Errorf("check %q: predicate is required", name))
+			continue
+		}
+		if err := ValidateStarlark(model.Checks[name].Predicate); err != nil {
+			errs = append(errs, fmt.Errorf("check %q: %w", name, err))
 		}
 	}
 	for _, name := range slices.Sorted(maps.Keys(model.Templates)) {

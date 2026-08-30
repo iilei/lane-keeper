@@ -1,0 +1,5 @@
+readiness: not ready
+workflow: release
+target: master
+check: ready
+reason: no baseline tag found

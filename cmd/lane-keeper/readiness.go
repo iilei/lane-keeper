@@ -62,7 +62,7 @@ func runReadiness(
 		return usageExitCode
 	}
 
-	resolved, inspector, err := prepareReadiness(ctx, *workflowName, *configPath, getwd, lookupEnv)
+	resolved, inspector, err := prepareReadiness(ctx, *workflowName, *configPath, stderr, getwd, lookupEnv)
 	if err != nil {
 		_, _ = fmt.Fprintf(stderr, "readiness: error: %v\n", err)
 		return usageExitCode
@@ -135,6 +135,7 @@ func awaitWorkflow(
 func prepareReadiness(
 	ctx context.Context,
 	workflowName, configPath string,
+	stderr io.Writer,
 	getwd func() (string, error),
 	lookupEnv func(string) (string, bool),
 ) (workflow.Resolved, *gitinspect.Inspector, error) {
@@ -153,6 +154,7 @@ func prepareReadiness(
 	if err != nil {
 		return workflow.Resolved{}, nil, fmt.Errorf("read config %q: %w", configPath, err)
 	}
+	warnOnVersionMismatch(stderr, string(content))
 	parsed, err := config.Parse(string(content))
 	if err != nil {
 		return workflow.Resolved{}, nil, err
@@ -172,6 +174,26 @@ func prepareReadiness(
 		return workflow.Resolved{}, nil, err
 	}
 	return resolved, inspector, nil
+}
+
+// warnOnVersionMismatch prints a non-fatal advisory to stderr when the running
+// binary's version differs from the repository's [tools] lane-keeper pin. A
+// "dev" build (unset via ldflags) is assumed to be a local build, not a
+// mismatched release, and is never warned about.
+func warnOnVersionMismatch(stderr io.Writer, content string) {
+	if version == "dev" {
+		return
+	}
+	pin, err := config.PinnedToolVersion(content)
+	if err != nil || !pin.Found || pin.Version == version {
+		return
+	}
+	_, _ = fmt.Fprintf(
+		stderr,
+		"lane-keeper: warning: running version %s, but repository pins %s\n",
+		version,
+		pin.Version,
+	)
 }
 
 func printReadiness(writer io.Writer, format string, resolved *workflow.Resolved, result policy.WorkflowResult) error {

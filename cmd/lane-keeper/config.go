@@ -90,7 +90,6 @@ func introspectConfigFile(ctx context.Context, tomlPath string, format bool) con
 		))
 	}
 	if !format {
-		result.Errors = config.CheckPredicatesInFile(tomlPath, string(content))
 		return result
 	}
 

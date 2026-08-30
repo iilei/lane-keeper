@@ -15,7 +15,10 @@ import (
 )
 
 type (
-	// Predicate represents a lane-keeper check predicate in TOML.
+	// Predicate locates one ordinary triple-quoted predicate value's text position
+	// for in-place --fmt splicing. Syntax validation does not depend on this type;
+	// Model.Validate performs structural validation directly from the parsed model,
+	// independent of TOML string quoting style.
 	Predicate struct {
 		CheckName string // e.g., "benign-changes-only-on-target-since-baseline"
 		Code      string // The Starlark source code
@@ -33,7 +36,11 @@ type (
 	}
 )
 
-// ExtractPredicates finds all Starlark predicate blocks in TOML content.
+// ExtractPredicates locates ordinary triple-quoted predicate blocks in TOML
+// content by text position, for --fmt in-place splicing only. It does not
+// recognize other valid TOML string representations (basic strings, literal
+// strings, single-line strings); Model.Validate validates predicate syntax
+// structurally regardless of quoting style.
 func ExtractPredicates(tomlContent string) ([]Predicate, error) {
 	// Match: predicate = """...""" non-greedy
 	// Uses DOTALL mode to match across lines
@@ -79,31 +86,6 @@ func ValidateTOML(content string) error {
 		return fmt.Errorf("toml parse error: %w", err)
 	}
 	return nil
-}
-
-// CheckPredicatesInFile validates all Starlark predicates in a TOML file.
-// Returns list of errors found (empty = success).
-func CheckPredicatesInFile(tomlPath, content string) []error {
-	predicates, err := ExtractPredicates(content)
-	if err != nil {
-		return []error{fmt.Errorf("extract predicates: %w", err)}
-	}
-
-	var errs []error
-
-	for _, pred := range predicates {
-		if err := ValidateStarlark(pred.Code); err != nil {
-			errs = append(errs, fmt.Errorf("%s: check %q: %w",
-				tomlPath, pred.CheckName, err))
-		}
-	}
-
-	// Validate TOML is still well-formed
-	if err := ValidateTOML(content); err != nil {
-		errs = append(errs, fmt.Errorf("%s: %w", tomlPath, err))
-	}
-
-	return errs
 }
 
 // FormatPredicates validates and formats predicates with an external Buildifier executable.

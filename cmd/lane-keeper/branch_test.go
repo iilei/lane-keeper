@@ -64,6 +64,48 @@ func TestRunBranchNameRendersJSON(t *testing.T) {
 	}
 }
 
+func TestRunBranchNameGoldenText(t *testing.T) {
+	paths := branchRepository(t, `{{ if .ticket }}{{ .ticket }}-{{ end }}{{ .environment }}-{{ .shortSha }}`)
+	var stdout, stderr bytes.Buffer
+
+	exitCode := runBranch(
+		context.Background(),
+		[]string{
+			branchNameCommand, workflowFlag, releaseWorkflow, configFlag, paths.configPath,
+			ticketFlag, ticketValue, environmentFlag, stagingEnvironment,
+		},
+		&stdout,
+		&stderr,
+		func() (string, error) { return paths.repositoryRoot, nil },
+		noEnvironment,
+	)
+	if exitCode != 0 {
+		t.Fatalf("runBranch() exit code = %d, want 0; stderr = %q", exitCode, stderr.String())
+	}
+	assertGolden(t, "branch_name_text", normalizeGolden(stdout.String()))
+}
+
+func TestRunBranchNameGoldenJSON(t *testing.T) {
+	paths := branchRepository(t, `{{ if .ticket }}{{ .ticket }}-{{ end }}{{ .environment }}-{{ .shortSha }}`)
+	var stdout, stderr bytes.Buffer
+
+	exitCode := runBranch(
+		context.Background(),
+		[]string{
+			branchNameCommand, workflowFlag, releaseWorkflow, configFlag, paths.configPath,
+			ticketFlag, ticketValue, environmentFlag, stagingEnvironment, outputFlag, jsonFormat,
+		},
+		&stdout,
+		&stderr,
+		func() (string, error) { return paths.repositoryRoot, nil },
+		noEnvironment,
+	)
+	if exitCode != 0 {
+		t.Fatalf("runBranch() exit code = %d, want 0; stderr = %q", exitCode, stderr.String())
+	}
+	assertGolden(t, "branch_name_json", normalizeGolden(stdout.String()))
+}
+
 func TestRunBranchNameRejectsInvalidRenderedRef(t *testing.T) {
 	paths := branchRepository(t, `feature/{{ .environment }}//bad`)
 	var stdout, stderr bytes.Buffer

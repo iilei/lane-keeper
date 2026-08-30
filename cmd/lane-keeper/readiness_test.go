@@ -93,6 +93,54 @@ func TestRunReadinessCheckReportsReadyAsJSON(t *testing.T) {
 	}
 }
 
+func TestRunReadinessWarnsOnToolVersionMismatch(t *testing.T) {
+	const testRunningVersion = "1.0.0"
+	paths := readinessRepositoryWithToolsPin(t, "succeed()", "9.9.9")
+	previousVersion := version
+	version = testRunningVersion
+	t.Cleanup(func() { version = previousVersion })
+
+	var stdout, stderr bytes.Buffer
+	exitCode := runReadiness(
+		context.Background(),
+		[]string{checkCommand, workflowFlag, releaseWorkflow, configFlag, paths.configPath},
+		&stdout,
+		&stderr,
+		func() (string, error) { return paths.repositoryRoot, nil },
+		noEnvironment,
+	)
+	if exitCode != 0 {
+		t.Fatalf("runReadiness() exit code = %d, want 0; stderr = %q", exitCode, stderr.String())
+	}
+	if got, want := stderr.String(), "running version 1.0.0, but repository pins 9.9.9"; !strings.Contains(got, want) {
+		t.Errorf("stderr = %q, want to contain %q", got, want)
+	}
+}
+
+func TestRunReadinessSilentOnMatchingToolVersion(t *testing.T) {
+	const testRunningVersion = "1.0.0"
+	paths := readinessRepositoryWithToolsPin(t, "succeed()", testRunningVersion)
+	previousVersion := version
+	version = testRunningVersion
+	t.Cleanup(func() { version = previousVersion })
+
+	var stdout, stderr bytes.Buffer
+	exitCode := runReadiness(
+		context.Background(),
+		[]string{checkCommand, workflowFlag, releaseWorkflow, configFlag, paths.configPath},
+		&stdout,
+		&stderr,
+		func() (string, error) { return paths.repositoryRoot, nil },
+		noEnvironment,
+	)
+	if exitCode != 0 {
+		t.Fatalf("runReadiness() exit code = %d, want 0; stderr = %q", exitCode, stderr.String())
+	}
+	if strings.Contains(stderr.String(), "warning") {
+		t.Errorf("stderr = %q, want no version warning", stderr.String())
+	}
+}
+
 func TestRunReadinessRejectsUnknownOutputFormat(t *testing.T) {
 	paths := readinessRepository(t, "succeed()")
 	var stdout, stderr bytes.Buffer
@@ -108,6 +156,78 @@ func TestRunReadinessRejectsUnknownOutputFormat(t *testing.T) {
 	if exitCode != usageExitCode {
 		t.Fatalf("runReadiness() exit code = %d, want %d; stderr = %q", exitCode, usageExitCode, stderr.String())
 	}
+}
+
+func TestRunReadinessCheckReadyGoldenText(t *testing.T) {
+	paths := readinessRepository(t, "succeed()")
+	var stdout, stderr bytes.Buffer
+
+	exitCode := runReadiness(
+		context.Background(),
+		[]string{checkCommand, workflowFlag, releaseWorkflow, configFlag, paths.configPath},
+		&stdout,
+		&stderr,
+		func() (string, error) { return paths.repositoryRoot, nil },
+		noEnvironment,
+	)
+	if exitCode != 0 {
+		t.Fatalf("runReadiness() exit code = %d, want 0; stderr = %q", exitCode, stderr.String())
+	}
+	assertGolden(t, "readiness_check_ready_text", stdout.String())
+}
+
+func TestRunReadinessCheckReadyGoldenJSON(t *testing.T) {
+	paths := readinessRepository(t, "succeed()")
+	var stdout, stderr bytes.Buffer
+
+	exitCode := runReadiness(
+		context.Background(),
+		[]string{checkCommand, workflowFlag, releaseWorkflow, configFlag, paths.configPath, outputFlag, jsonFormat},
+		&stdout,
+		&stderr,
+		func() (string, error) { return paths.repositoryRoot, nil },
+		noEnvironment,
+	)
+	if exitCode != 0 {
+		t.Fatalf("runReadiness() exit code = %d, want 0; stderr = %q", exitCode, stderr.String())
+	}
+	assertGolden(t, "readiness_check_ready_json", stdout.String())
+}
+
+func TestRunReadinessCheckNotReadyGoldenText(t *testing.T) {
+	paths := readinessRepository(t, `fail("no baseline tag found", exit_code = 10)`)
+	var stdout, stderr bytes.Buffer
+
+	exitCode := runReadiness(
+		context.Background(),
+		[]string{checkCommand, workflowFlag, releaseWorkflow, configFlag, paths.configPath},
+		&stdout,
+		&stderr,
+		func() (string, error) { return paths.repositoryRoot, nil },
+		noEnvironment,
+	)
+	if exitCode != 10 {
+		t.Fatalf("runReadiness() exit code = %d, want 10; stderr = %q", exitCode, stderr.String())
+	}
+	assertGolden(t, "readiness_check_not_ready_text", stdout.String())
+}
+
+func TestRunReadinessCheckNotReadyGoldenJSON(t *testing.T) {
+	paths := readinessRepository(t, `fail("no baseline tag found", exit_code = 10)`)
+	var stdout, stderr bytes.Buffer
+
+	exitCode := runReadiness(
+		context.Background(),
+		[]string{checkCommand, workflowFlag, releaseWorkflow, configFlag, paths.configPath, outputFlag, jsonFormat},
+		&stdout,
+		&stderr,
+		func() (string, error) { return paths.repositoryRoot, nil },
+		noEnvironment,
+	)
+	if exitCode != 10 {
+		t.Fatalf("runReadiness() exit code = %d, want 10; stderr = %q", exitCode, stderr.String())
+	}
+	assertGolden(t, "readiness_check_not_ready_json", stdout.String())
 }
 
 func TestRunReadinessCheckPropagatesPredicateFailure(t *testing.T) {
@@ -255,6 +375,37 @@ target_branch = { resolve = "literal", value = "master" }
 [_.lane-keeper.workflows.release.await]
 interval = "` + interval + `"
 timeout = "` + timeout + `"
+`
+	if err := os.WriteFile(configPath, []byte(content), 0o600); err != nil {
+		t.Fatalf("WriteFile(): %v", err)
+	}
+	return readinessRepositoryPaths{repositoryRoot: repositoryRoot, configPath: configPath}
+}
+
+func readinessRepositoryWithToolsPin(t *testing.T, predicate, pinnedVersion string) readinessRepositoryPaths {
+	t.Helper()
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git is not available")
+	}
+	repositoryRoot := t.TempDir()
+	runGit(t, repositoryRoot, "init", "--initial-branch=master")
+	configPath := filepath.Join(repositoryRoot, "lane-keeper.toml")
+	content := `
+[tools]
+lane-keeper = "` + pinnedVersion + `"
+
+[_.lane-keeper]
+version = 1
+
+[_.lane-keeper.defaults]
+remote = "origin"
+
+[_.lane-keeper.checks.ready]
+predicate = """` + predicate + `"""
+
+[_.lane-keeper.workflows.release]
+checks = ["ready"]
+target_branch = { resolve = "literal", value = "master" }
 `
 	if err := os.WriteFile(configPath, []byte(content), 0o600); err != nil {
 		t.Fatalf("WriteFile(): %v", err)

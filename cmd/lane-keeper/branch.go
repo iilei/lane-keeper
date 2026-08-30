@@ -49,7 +49,7 @@ func runBranch(
 		return usageExitCode
 	}
 
-	resolved, inspector, err := prepareReadiness(ctx, *workflowName, *configPath, getwd, lookupEnv)
+	resolved, inspector, err := prepareReadiness(ctx, *workflowName, *configPath, stderr, getwd, lookupEnv)
 	if err != nil {
 		_, _ = fmt.Fprintf(stderr, "branch: error: %v\n", err)
 		return usageExitCode

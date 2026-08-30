@@ -35,12 +35,15 @@ The goal is therefore to retain the readability advantage of Starlark while maki
 
 ### Current implementation status
 
-The current `config-introspection` command extracts ordinary triple-quoted
-predicate values, parses them with Canonical Starlark without execution, and
-can format them through external Buildifier. `readiness check` executes ordered
-predicates with finite step, allocation, and deadline limits; immutable
+The current `config-introspection --lint` command validates every configured
+check predicate's Starlark syntax structurally from the parsed configuration
+model, independent of TOML string quoting style. `--fmt` additionally locates
+ordinary triple-quoted predicate values by text position and formats them
+through external Buildifier; this positional splicing remains limited to the
+triple-quoted representation. `readiness check` and `readiness await` execute
+ordered predicates with finite step, allocation, and deadline limits; immutable
 workflow/input contexts; read-only Git inspection; and terminating
-`succeed()`/`fail()` results. `readiness await` remains planned work.
+`succeed()`/`fail()` results.
 
 The Starlark source MUST be obtained directly from the repository-owned
 `mise.toml`, from a configured field under the `[_.lane-keeper]` metadata

@@ -1,0 +1,1 @@
+{"status":"not ready","workflow":"release","target":"master","data":{"check":"ready","reason":"no baseline tag found"}}
