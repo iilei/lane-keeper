@@ -33,7 +33,7 @@ The design establishes that local and CI behavior must share one readiness imple
 
 This document specifies the target design unless a section explicitly says
 otherwise. The current executable implements `version`, `config-introspection`,
-`readiness check`, and `readiness await`; `branch` and `mr` remain unimplemented.
+`readiness check`, `readiness await`, and `branch name`; `mr` remains unimplemented.
 
 Current config introspection can:
 
@@ -59,11 +59,15 @@ Current config introspection can:
 - run `readiness await --workflow <workflow>`, re-evaluating the same
   canonical aggregate readiness check on the configured interval until ready,
   timeout, or interruption (`SIGINT`/`SIGTERM`), with per-evaluation resource
-  and cancellation budgets kept independent of the overall await timeout.
+  and cancellation budgets kept independent of the overall await timeout;
+- run `branch name --workflow <workflow>`, resolving the source commit,
+  rendering the workflow's configured branch template with the shared
+  template context and date functions, validating the rendered name with
+  `git check-ref-format --branch`, and printing the canonical branch name.
 
-It does not yet render branch and merge-request templates. Predicate
-extraction is currently limited to the documented ordinary triple-quoted
-representation; a TOML-structure-driven extractor remains planned.
+It does not yet render merge-request templates. Predicate extraction is
+currently limited to the documented ordinary triple-quoted representation; a
+TOML-structure-driven extractor remains planned.
 
 ---
 

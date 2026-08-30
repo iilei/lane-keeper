@@ -22,15 +22,18 @@ type (
 
 	// Resolved is the complete static context required to evaluate one workflow.
 	Resolved struct {
-		Name                 string
-		Description          string
-		Remote               string
-		TargetBranch         string
-		Checks               []NamedCheck
-		SharedSource         string
-		BranchTemplate       string
-		MergeRequestTemplate string
-		Await                config.AwaitSettings
+		Name                     string
+		Description              string
+		Remote                   string
+		TargetBranch             string
+		Checks                   []NamedCheck
+		SharedSource             string
+		BranchTemplateName       string
+		BranchTemplate           config.Template
+		MergeRequestTemplateName string
+		MergeRequestTemplate     config.Template
+		TemplateDateFormats      map[string]string
+		Await                    config.AwaitSettings
 	}
 )
 
@@ -71,15 +74,18 @@ func Resolve(
 		checks = append(checks, NamedCheck{Name: checkName, Check: model.Checks[checkName]})
 	}
 	return Resolved{
-		Name:                 name,
-		Description:          configured.Description,
-		Remote:               remote,
-		TargetBranch:         targetBranch,
-		Checks:               checks,
-		SharedSource:         model.Shared.Source,
-		BranchTemplate:       configured.BranchTemplate,
-		MergeRequestTemplate: configured.MergeRequestTemplate,
-		Await:                await,
+		Name:                     name,
+		Description:              configured.Description,
+		Remote:                   remote,
+		TargetBranch:             targetBranch,
+		Checks:                   checks,
+		SharedSource:             model.Shared.Source,
+		BranchTemplateName:       configured.BranchTemplate,
+		BranchTemplate:           model.Templates[configured.BranchTemplate],
+		MergeRequestTemplateName: configured.MergeRequestTemplate,
+		MergeRequestTemplate:     model.Templates[configured.MergeRequestTemplate],
+		TemplateDateFormats:      model.Defaults.TemplateDateFormats,
+		Await:                    await,
 	}, nil
 }
 

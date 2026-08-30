@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os/exec"
 	"strings"
+	"time"
 )
 
 type (
@@ -117,6 +118,43 @@ func (inspector *Inspector) Diff(ctx context.Context, fromRef, toRef string) (Di
 	}
 	files := splitNUL(output)
 	return Diff{Files: files, IsEmpty: len(files) == 0}, nil
+}
+
+// AuthorDate returns the author date of the commit addressed by ref.
+func (inspector *Inspector) AuthorDate(ctx context.Context, ref string) (time.Time, error) {
+	return inspector.commitTimestamp(ctx, ref, "%aI")
+}
+
+// CommitDate returns the committer date of the commit addressed by ref.
+func (inspector *Inspector) CommitDate(ctx context.Context, ref string) (time.Time, error) {
+	return inspector.commitTimestamp(ctx, ref, "%cI")
+}
+
+// CheckRefFormat reports whether name is a well-formed Git branch name.
+func (inspector *Inspector) CheckRefFormat(ctx context.Context, name string) error {
+	commandArgs := []string{"-C", inspector.repositoryRoot, "check-ref-format", "--branch", name}
+	//nolint:gosec // Git is fixed; repository and candidate name are separate argv values without a shell.
+	command := exec.CommandContext(ctx, "git", commandArgs...)
+	if err := command.Run(); err != nil {
+		return fmt.Errorf("%q is not a valid Git branch name: %w", name, err)
+	}
+	return nil
+}
+
+func (inspector *Inspector) commitTimestamp(ctx context.Context, ref, format string) (time.Time, error) {
+	sha, err := inspector.Resolve(ctx, ref)
+	if err != nil {
+		return time.Time{}, err
+	}
+	output, err := inspector.output(ctx, "show", "-s", "--format="+format, sha)
+	if err != nil {
+		return time.Time{}, fmt.Errorf("read commit timestamp of %q: %w", ref, err)
+	}
+	timestamp, err := time.Parse(time.RFC3339, strings.TrimSpace(string(output)))
+	if err != nil {
+		return time.Time{}, fmt.Errorf("parse commit timestamp of %q: %w", ref, err)
+	}
+	return timestamp, nil
 }
 
 func (inspector *Inspector) output(ctx context.Context, args ...string) ([]byte, error) {

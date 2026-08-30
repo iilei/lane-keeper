@@ -72,6 +72,40 @@ func TestInspectorReadsRepositoryState(t *testing.T) {
 	}
 }
 
+func TestInspectorReadsCommitDatesAndValidatesRefFormat(t *testing.T) {
+	t.Parallel()
+
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git is not available")
+	}
+	repositoryRoot := initializeRepository(t)
+	inspector := gitinspect.NewInspector(repositoryRoot)
+	ctx := context.Background()
+
+	authorDate, err := inspector.AuthorDate(ctx, "HEAD")
+	if err != nil {
+		t.Fatalf("AuthorDate() error = %v", err)
+	}
+	if authorDate.IsZero() {
+		t.Error("AuthorDate() = zero time, want a resolved timestamp")
+	}
+
+	commitDate, err := inspector.CommitDate(ctx, "HEAD")
+	if err != nil {
+		t.Fatalf("CommitDate() error = %v", err)
+	}
+	if commitDate.IsZero() {
+		t.Error("CommitDate() = zero time, want a resolved timestamp")
+	}
+
+	if err := inspector.CheckRefFormat(ctx, "feature/example-123"); err != nil {
+		t.Errorf("CheckRefFormat(valid) error = %v", err)
+	}
+	if err := inspector.CheckRefFormat(ctx, "feature//bad"); err == nil {
+		t.Error("CheckRefFormat(invalid) error = nil, want error")
+	}
+}
+
 func TestInspectorReportsMissingReachableTag(t *testing.T) {
 	t.Parallel()
 
