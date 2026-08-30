@@ -27,12 +27,14 @@ The current executable implements:
 - the `git-keep-lane` forwarding executable;
 - internal template context and named date-layout primitives;
 - typed workflow lookup, default merging, ordered check resolution, and
-  `literal`/`git-remote-head` target-branch resolution.
+  `literal`/`git-remote-head` target-branch resolution;
+- read-only Git inspection for commit resolution, Git-native abbreviated SHAs,
+  newest reachable tags by creator date, and NUL-safe changed file paths.
 
 `readiness`, `branch`, and `mr` are currently command stubs. Repository config
-discovery, Starlark execution and host APIs, readiness evaluation, and template
-rendering remain planned work. The example configuration below documents the
-intended public contract, not a fully implemented workflow.
+discovery, the Starlark host-value bridge and execution, readiness evaluation,
+and template rendering remain planned work. The example configuration below
+documents the intended public contract, not a fully implemented workflow.
 
 `--lint` is self-contained. `--fmt` requires the external `buildifier`
 executable on `PATH`; the published formatting hook installs it in its isolated

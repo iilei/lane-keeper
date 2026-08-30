@@ -2,8 +2,10 @@ package workflow_test
 
 import (
 	"context"
+	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -121,7 +123,20 @@ func runGit(t *testing.T, repositoryRoot string, args ...string) {
 	t.Helper()
 	commandArgs := append([]string{"-C", filepath.Clean(repositoryRoot)}, args...)
 	//nolint:gosec // test helper passes arguments directly to Git without a shell.
-	if output, err := exec.CommandContext(context.Background(), "git", commandArgs...).CombinedOutput(); err != nil {
+	command := exec.CommandContext(context.Background(), "git", commandArgs...)
+	command.Env = isolatedGitEnvironment()
+	if output, err := command.CombinedOutput(); err != nil {
 		t.Fatalf("git %v: %v: %s", args, err, output)
 	}
+}
+
+func isolatedGitEnvironment() []string {
+	environment := make([]string, 0, len(os.Environ())+2)
+	for _, variable := range os.Environ() {
+		name, _, _ := strings.Cut(variable, "=")
+		if !strings.HasPrefix(name, "GIT_") {
+			environment = append(environment, variable)
+		}
+	}
+	return append(environment, "GIT_CONFIG_GLOBAL="+os.DevNull, "GIT_CONFIG_NOSYSTEM=1")
 }

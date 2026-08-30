@@ -47,12 +47,14 @@ Current config introspection can:
 - format extracted predicates through an external `buildifier` executable;
 - validate and preview custom template date layouts;
 - resolve a typed workflow with merged defaults, ordered checks, effective
-  await settings, and `literal` or `git-remote-head` target branches.
+  await settings, and `literal` or `git-remote-head` target branches;
+- inspect Git state through commit resolution, Git-native SHA abbreviation,
+  newest reachable tags by creator date, and NUL-safe changed file paths.
 
-It does not yet discover repository configuration, resolve general Git refs,
-execute Starlark, expose the planned host API, evaluate readiness, or render
-branch and merge-request templates. Predicate extraction is currently limited
-to the documented ordinary triple-quoted representation; a TOML-structure-driven
+It does not yet discover repository configuration, bridge the Git inspector into
+Starlark host values, execute Starlark, evaluate readiness, or render branch and
+merge-request templates. Predicate extraction is currently limited to the
+documented ordinary triple-quoted representation; a TOML-structure-driven
 extractor remains planned.
 
 ---
@@ -439,6 +441,10 @@ git.short_sha(ref)
 git.latest_tag(ref)
 git.diff(from_ref, to_ref)
 ```
+
+`git.short_sha(ref)` delegates abbreviation width to Git rather than imposing a
+Lane-Keeper-specific length. `git.latest_tag(ref)` selects the reachable tag
+with the newest creator date.
 
 The exact API should grow only in response to real repository policy needs.
 
