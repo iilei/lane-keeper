@@ -147,25 +147,39 @@ func prepareReadiness(
 	if err != nil {
 		return workflow.Resolved{}, nil, err
 	}
-	if configPath == "" {
+	explicitConfig := configPath != ""
+	if !explicitConfig {
 		configPath = filepath.Join(repositoryRoot, "mise.toml")
 	}
 	content, err := os.ReadFile(configPath) //nolint:gosec // caller explicitly selects repository configuration.
 	if err != nil {
 		return workflow.Resolved{}, nil, fmt.Errorf("read config %q: %w", configPath, err)
 	}
-	warnOnVersionMismatch(stderr, string(content))
-	parsed, err := config.Parse(string(content))
-	if err != nil {
-		return workflow.Resolved{}, nil, err
-	}
-	if !parsed.Found {
-		return workflow.Resolved{}, nil, fmt.Errorf("config %q does not contain [_.lane-keeper]", configPath)
+
+	var model *config.Model
+	if explicitConfig {
+		parsedModel, err := config.ParseExplicit(string(content))
+		if err != nil {
+			return workflow.Resolved{}, nil, fmt.Errorf("config %q: %w", configPath, err)
+		}
+		model = &parsedModel
+	} else {
+		// The [tools] version pin is a Mise concept; only check it against the
+		// implicit repository mise.toml, never against an explicit --config file.
+		warnOnVersionMismatch(stderr, string(content))
+		parsed, err := config.Parse(string(content))
+		if err != nil {
+			return workflow.Resolved{}, nil, err
+		}
+		if !parsed.Found {
+			return workflow.Resolved{}, nil, fmt.Errorf("config %q does not contain [_.lane-keeper]", configPath)
+		}
+		model = parsed.Model
 	}
 	inspector := gitinspect.NewInspector(repositoryRoot)
 	resolved, err := workflow.Resolve(
 		ctx,
-		parsed.Model,
+		model,
 		workflowName,
 		lookupEnv,
 		workflow.GitRemoteHead(repositoryRoot),

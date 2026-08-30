@@ -95,7 +95,7 @@ func TestRunReadinessCheckReportsReadyAsJSON(t *testing.T) {
 
 func TestRunReadinessWarnsOnToolVersionMismatch(t *testing.T) {
 	const testRunningVersion = "1.0.0"
-	paths := readinessRepositoryWithToolsPin(t, "succeed()", "9.9.9")
+	repositoryRoot := readinessRepositoryWithToolsPin(t, "succeed()", "9.9.9")
 	previousVersion := version
 	version = testRunningVersion
 	t.Cleanup(func() { version = previousVersion })
@@ -103,10 +103,10 @@ func TestRunReadinessWarnsOnToolVersionMismatch(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	exitCode := runReadiness(
 		context.Background(),
-		[]string{checkCommand, workflowFlag, releaseWorkflow, configFlag, paths.configPath},
+		[]string{checkCommand, workflowFlag, releaseWorkflow},
 		&stdout,
 		&stderr,
-		func() (string, error) { return paths.repositoryRoot, nil },
+		func() (string, error) { return repositoryRoot, nil },
 		noEnvironment,
 	)
 	if exitCode != 0 {
@@ -119,7 +119,7 @@ func TestRunReadinessWarnsOnToolVersionMismatch(t *testing.T) {
 
 func TestRunReadinessSilentOnMatchingToolVersion(t *testing.T) {
 	const testRunningVersion = "1.0.0"
-	paths := readinessRepositoryWithToolsPin(t, "succeed()", testRunningVersion)
+	repositoryRoot := readinessRepositoryWithToolsPin(t, "succeed()", testRunningVersion)
 	previousVersion := version
 	version = testRunningVersion
 	t.Cleanup(func() { version = previousVersion })
@@ -127,10 +127,10 @@ func TestRunReadinessSilentOnMatchingToolVersion(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	exitCode := runReadiness(
 		context.Background(),
-		[]string{checkCommand, workflowFlag, releaseWorkflow, configFlag, paths.configPath},
+		[]string{checkCommand, workflowFlag, releaseWorkflow},
 		&stdout,
 		&stderr,
-		func() (string, error) { return paths.repositoryRoot, nil },
+		func() (string, error) { return repositoryRoot, nil },
 		noEnvironment,
 	)
 	if exitCode != 0 {
@@ -359,20 +359,19 @@ func readinessRepositoryWithAwait(t *testing.T, predicate, interval, timeout str
 	runGit(t, repositoryRoot, "commit", "--allow-empty", "-m", "init")
 	configPath := filepath.Join(repositoryRoot, "lane-keeper.toml")
 	content := `
-[_.lane-keeper]
 version = 1
 
-[_.lane-keeper.defaults]
+[defaults]
 remote = "origin"
 
-[_.lane-keeper.checks.ready]
+[checks.ready]
 predicate = """` + predicate + `"""
 
-[_.lane-keeper.workflows.release]
+[workflows.release]
 checks = ["ready"]
 target_branch = { resolve = "literal", value = "master" }
 
-[_.lane-keeper.workflows.release.await]
+[workflows.release.await]
 interval = "` + interval + `"
 timeout = "` + timeout + `"
 `
@@ -382,14 +381,17 @@ timeout = "` + timeout + `"
 	return readinessRepositoryPaths{repositoryRoot: repositoryRoot, configPath: configPath}
 }
 
-func readinessRepositoryWithToolsPin(t *testing.T, predicate, pinnedVersion string) readinessRepositoryPaths {
+// readinessRepositoryWithToolsPin writes a repository mise.toml (discovered
+// implicitly, not via --config) so the [tools] version pin coexists with
+// nested [_.lane-keeper] configuration, matching real repository layout.
+func readinessRepositoryWithToolsPin(t *testing.T, predicate, pinnedVersion string) string {
 	t.Helper()
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("git is not available")
 	}
 	repositoryRoot := t.TempDir()
 	runGit(t, repositoryRoot, "init", "--initial-branch=master")
-	configPath := filepath.Join(repositoryRoot, "lane-keeper.toml")
+	configPath := filepath.Join(repositoryRoot, "mise.toml")
 	content := `
 [tools]
 lane-keeper = "` + pinnedVersion + `"
@@ -410,7 +412,7 @@ target_branch = { resolve = "literal", value = "master" }
 	if err := os.WriteFile(configPath, []byte(content), 0o600); err != nil {
 		t.Fatalf("WriteFile(): %v", err)
 	}
-	return readinessRepositoryPaths{repositoryRoot: repositoryRoot, configPath: configPath}
+	return repositoryRoot
 }
 
 func readinessRepository(t *testing.T, predicate string) readinessRepositoryPaths {
@@ -422,16 +424,15 @@ func readinessRepository(t *testing.T, predicate string) readinessRepositoryPath
 	runGit(t, repositoryRoot, "init", "--initial-branch=master")
 	configPath := filepath.Join(repositoryRoot, "lane-keeper.toml")
 	content := `
-[_.lane-keeper]
 version = 1
 
-[_.lane-keeper.defaults]
+[defaults]
 remote = "origin"
 
-[_.lane-keeper.checks.ready]
+[checks.ready]
 predicate = """` + predicate + `"""
 
-[_.lane-keeper.workflows.release]
+[workflows.release]
 checks = ["ready"]
 target_branch = { resolve = "literal", value = "master" }
 `

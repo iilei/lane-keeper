@@ -51,6 +51,9 @@ builds:
     goarch:
       - amd64
       - arm64
+      - arm
+    goarm:
+      - "7"  # ARMv7
     ldflags:
       - -s -w
       - -X main.version={{.Version}}
@@ -101,10 +104,12 @@ universal_binaries:
   - id: lane-keeper-darwin
     ids:
       - lane-keeper-darwin
+    name_template: lane-keeper
     replace: true
   - id: git-keep-lane-darwin
     ids:
       - git-keep-lane-darwin
+    name_template: git-keep-lane
     replace: true
 
 checksum:

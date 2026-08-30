@@ -168,19 +168,18 @@ func branchRepository(t *testing.T, branchTemplate string) readinessRepositoryPa
 	runGit(t, repositoryRoot, "commit", "--allow-empty", "-m", "init")
 	configPath := filepath.Join(repositoryRoot, "lane-keeper.toml")
 	content := `
-[_.lane-keeper]
 version = 1
 
-[_.lane-keeper.defaults]
+[defaults]
 remote = "origin"
 
-[_.lane-keeper.checks.ready]
+[checks.ready]
 predicate = """succeed()"""
 
-[_.lane-keeper.templates.contribution-branch]
+[templates.contribution-branch]
 template = "` + branchTemplate + `"
 
-[_.lane-keeper.workflows.release]
+[workflows.release]
 checks = ["ready"]
 target_branch = { resolve = "literal", value = "master" }
 branch_template = "contribution-branch"
@@ -204,16 +203,15 @@ func noTemplateRepository(t *testing.T) readinessRepositoryPaths {
 	runGit(t, repositoryRoot, "commit", "--allow-empty", "-m", "init")
 	configPath := filepath.Join(repositoryRoot, "lane-keeper.toml")
 	content := `
-[_.lane-keeper]
 version = 1
 
-[_.lane-keeper.defaults]
+[defaults]
 remote = "origin"
 
-[_.lane-keeper.checks.ready]
+[checks.ready]
 predicate = """succeed()"""
 
-[_.lane-keeper.workflows.release]
+[workflows.release]
 checks = ["ready"]
 target_branch = { resolve = "literal", value = "master" }
 `

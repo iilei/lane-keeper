@@ -138,6 +138,22 @@ func Parse(content string) (ParseResult, error) {
 	return ParseResult{Model: &model, Found: true}, nil
 }
 
+// ParseExplicit reads a dedicated Lane-Keeper TOML file, where configuration
+// fields (version, defaults, checks, templates, workflows) live at the
+// document root rather than beneath [_.lane-keeper]. The [_] nesting exists
+// only so Mise ignores Lane-Keeper configuration embedded in mise.toml; a
+// file passed explicitly via --config is never read by Mise, so it carries
+// no such requirement.
+func ParseExplicit(content string) (Model, error) {
+	var model Model
+	decoder := toml.NewDecoder(strings.NewReader(content))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&model); err != nil {
+		return Model{}, fmt.Errorf("decode config: %w", err)
+	}
+	return model, nil
+}
+
 // PinnedToolVersion reads the repository-pinned lane-keeper version from a
 // Mise TOML document's [tools] table, such as `lane-keeper = "0.4.2"`. It
 // returns Found=false if [tools].lane-keeper is absent or not a plain string

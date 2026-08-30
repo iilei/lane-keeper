@@ -272,6 +272,37 @@ Recommended precedence:
 
 A dedicated `.lane-keeper.toml` is not needed for the first version.
 
+### 5.2 Explicit config file shape
+
+An explicit `--config <path>` file is never read by Mise, so it carries
+configuration fields (`version`, `defaults`, `checks`, `templates`,
+`workflows`) at the document root, without the `[_.lane-keeper]` wrapper
+required for `mise.toml`:
+
+```toml
+version = 1
+
+[defaults]
+remote = "origin"
+
+[checks.main-ready]
+predicate = """
+succeed()
+"""
+
+[workflows.deploy]
+checks = ["main-ready"]
+target_branch = { resolve = "literal", value = "main" }
+```
+
+The implicit repository `mise.toml` lookup always uses the nested
+`[_.lane-keeper]` shape. The two shapes are mutually exclusive by lookup
+path, not merged: `--config` never falls back to `[_.lane-keeper]` nesting,
+and the implicit `mise.toml` lookup never accepts root-level fields. The
+`[tools]` version-pin advisory (§18) is checked only against the implicit
+`mise.toml`, since `[tools]` is a Mise concept with no meaning in a dedicated
+Lane-Keeper file.
+
 ---
 
 ## 6. Configuration Shape
