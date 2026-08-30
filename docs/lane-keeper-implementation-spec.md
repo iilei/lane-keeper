@@ -45,13 +45,15 @@ Current config introspection can:
   `[_.lane-keeper.checks.<name>]`;
 - parse extracted predicates with Canonical Starlark without executing them;
 - format extracted predicates through an external `buildifier` executable;
-- validate and preview custom template date layouts.
+- validate and preview custom template date layouts;
+- resolve a typed workflow with merged defaults, ordered checks, effective
+  await settings, and `literal` or `git-remote-head` target branches.
 
-It does not yet resolve workflows or Git state, execute Starlark, expose the
-planned host API, evaluate readiness, or render branch and merge-request
-templates. Predicate extraction is currently limited to the documented
-ordinary triple-quoted representation; a TOML-structure-driven extractor
-remains planned.
+It does not yet discover repository configuration, resolve general Git refs,
+execute Starlark, expose the planned host API, evaluate readiness, or render
+branch and merge-request templates. Predicate extraction is currently limited
+to the documented ordinary triple-quoted representation; a TOML-structure-driven
+extractor remains planned.
 
 ---
 
