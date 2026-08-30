@@ -37,9 +37,10 @@ The goal is therefore to retain the readability advantage of Starlark while maki
 
 The current `config-introspection` command extracts ordinary triple-quoted
 predicate values, parses them with Canonical Starlark without execution, and
-can format them through external Buildifier. The evaluator, resource budgets,
-host values, Git inspection functions, and readiness commands described below
-remain design requirements rather than implemented behavior.
+can format them through external Buildifier. `readiness check` executes ordered
+predicates with finite step, allocation, and deadline limits; immutable
+workflow/input contexts; read-only Git inspection; and terminating
+`succeed()`/`fail()` results. `readiness await` remains planned work.
 
 The Starlark source MUST be obtained directly from the repository-owned
 `mise.toml`, from a configured field under the `[_.lane-keeper]` metadata

@@ -34,6 +34,17 @@ func NewInspector(repositoryRoot string) *Inspector {
 	return &Inspector{repositoryRoot: repositoryRoot}
 }
 
+// Root returns the top-level directory of the Git repository containing path.
+func Root(ctx context.Context, path string) (string, error) {
+	//nolint:gosec // Git is fixed; path is a separate argv value without a shell.
+	command := exec.CommandContext(ctx, "git", "-C", path, "rev-parse", "--show-toplevel")
+	output, err := command.Output()
+	if err != nil {
+		return "", fmt.Errorf("find Git repository from %q: %w", path, err)
+	}
+	return strings.TrimSpace(string(output)), nil
+}
+
 // Resolve returns the commit object ID addressed by ref.
 func (inspector *Inspector) Resolve(ctx context.Context, ref string) (string, error) {
 	output, err := inspector.output(ctx, "rev-parse", "--verify", "--end-of-options", ref+"^{commit}")

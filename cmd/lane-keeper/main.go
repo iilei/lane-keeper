@@ -29,8 +29,7 @@ func main() {
 		os.Exit(configCheck(args))
 
 	case "readiness":
-		fprintln(os.Stderr, "readiness: not yet implemented")
-		os.Exit(usageExitCode)
+		os.Exit(readiness(args))
 
 	case "branch":
 		fprintln(os.Stderr, "branch: not yet implemented")

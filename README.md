@@ -29,12 +29,16 @@ The current executable implements:
 - typed workflow lookup, default merging, ordered check resolution, and
   `literal`/`git-remote-head` target-branch resolution;
 - read-only Git inspection for commit resolution, Git-native abbreviated SHAs,
-  newest reachable tags by creator date, and NUL-safe changed file paths.
+  newest reachable tags by creator date, and NUL-safe changed file paths;
+- bounded inline Starlark execution with immutable workflow/input contexts,
+  read-only Git host functions, and terminating `succeed()`/`fail()` results;
+- `lane-keeper readiness check --workflow <name>` with repository config
+  discovery, ordered check evaluation, human-readable output, and predicate
+  exit-code propagation.
 
-`readiness`, `branch`, and `mr` are currently command stubs. Repository config
-discovery, the Starlark host-value bridge and execution, readiness evaluation,
-and template rendering remain planned work. The example configuration below
-documents the intended public contract, not a fully implemented workflow.
+`readiness await`, `branch`, and `mr` remain unimplemented. Template rendering
+also remains planned work. The example configuration below documents both the
+implemented readiness contract and planned rendering commands.
 
 `--lint` is self-contained. `--fmt` requires the external `buildifier`
 executable on `PATH`; the published formatting hook installs it in its isolated
