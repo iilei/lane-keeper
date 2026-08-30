@@ -273,6 +273,7 @@ version = 1
 [_.lane-keeper.defaults]
 remote = "origin"
 await_interval = "30s"
+await_timeout = "30m"
 
 [_.lane-keeper.defaults.template_date_formats]
 releaseStamp = "2006.01.02"
@@ -317,6 +318,7 @@ merge_request_template = "merge-request-message"
 
 [_.lane-keeper.workflows.deploy.await]
 interval = "30s"
+timeout = "15m"
 
 [tasks."check:readiness-main"]
 run = "lane-keeper readiness check --workflow deploy"
@@ -606,6 +608,7 @@ Reasonable defaults:
 ```text
 remote                 origin
 await interval         30s
+await timeout          30m
 branch template        [ticket-]date-environment-shortSha
 ```
 
@@ -765,6 +768,34 @@ checks = ["branch-ready", "required-tag-present"]
 Evaluation stops at the first not-ready result or error. A workflow is ready
 only when every check passes. `readiness await` MUST reuse this aggregate
 evaluation; it must not implement a separate per-check execution path.
+
+### 14.3 Await timing
+
+Await timing resolves in this order:
+
+```text
+environment override
+> workflow await setting
+> repository default
+> built-in default
+```
+
+The built-in interval is 30 seconds and the built-in timeout is 30 minutes.
+`LANE_KEEPER_AWAIT_INTERVAL` and `LANE_KEEPER_AWAIT_TIMEOUT` provide
+per-invocation overrides. A future CLI flag may take precedence over all four
+sources when the readiness command is implemented.
+
+The interval MUST be strictly positive. The timeout MUST be non-negative. A
+timeout of zero permits the initial readiness evaluation and then returns its
+result without sleeping or retrying. The timeout governs only sleeping and
+retries; each predicate evaluation has its separate resource and cancellation
+budget.
+
+Configured and ordinary environment timeouts MUST NOT exceed 24 hours. A power
+user may raise that ceiling by setting
+`LANE_KEEPER_UNSAFE_ALLOW_LONG_AWAIT_MAXIMUM` to an integer number of seconds
+greater than 86400. This unsafe value defines the effective ceiling and has no
+additional policy maximum, though it must be representable as a Go duration.
 
 ## 15. Out of Scope
 
@@ -1105,9 +1136,10 @@ After the first increment is proven:
 
 ```text
 1. `readiness await`
-2. configurable await interval
+2. configurable await interval and timeout
 3. interrupt handling
-4. tests proving await delegates to check/predicate implementation
+4. environment timing overrides
+5. tests proving await delegates to check/predicate implementation
 ```
 
 No second predicate implementation is allowed.

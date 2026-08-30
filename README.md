@@ -54,3 +54,25 @@ target_branch = { resolve = "git-remote-head" }
 such as `refs/remotes/origin/HEAD`. Use `resolve = "literal"` with a non-empty
 `value` when the workflow must always evaluate a named branch. Resolver values
 are a closed Lane-Keeper API.
+
+Await behavior has repository defaults and optional workflow overrides:
+
+```toml
+[_.lane-keeper.defaults]
+await_interval = "30s"
+await_timeout = "30m"
+
+[_.lane-keeper.workflows.release.await]
+interval = "10s"
+timeout = "15m"
+```
+
+An await timeout of `0s` always permits the initial readiness evaluation but no
+sleep or retry. Intervals must be positive; timeouts must be non-negative and
+normally cannot exceed 24 hours.
+
+Per-invocation environment overrides are `LANE_KEEPER_AWAIT_INTERVAL` and
+`LANE_KEEPER_AWAIT_TIMEOUT`. A power user may raise the 24-hour ceiling by
+setting `LANE_KEEPER_UNSAFE_ALLOW_LONG_AWAIT_MAXIMUM` to a positive integer
+number of seconds greater than 86400. The supplied ceiling has no additional
+policy maximum, but it must fit Go's duration representation.

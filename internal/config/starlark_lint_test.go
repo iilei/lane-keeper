@@ -3,11 +3,13 @@ package config_test
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/iilei/lane-keeper/internal/config"
 )
 
-const validLaneKeeperConfig = `
+const (
+	validLaneKeeperConfig = `
 [tools]
 go = "1.25"
 
@@ -17,6 +19,7 @@ version = 1
 [_.lane-keeper.defaults]
 remote = "origin"
 await_interval = "30s"
+await_timeout = "30m"
 
 [_.lane-keeper.checks.ready]
 predicate = "succeed()"
@@ -33,7 +36,13 @@ checks = ["ready"]
 target_branch = { resolve = "git-remote-head" }
 branch_template = "branch"
 merge_request_template = "message"
+
+[_.lane-keeper.workflows.release.await]
+interval = "10s"
+timeout = "0s"
 `
+	longAwaitTimeout = "48h"
+)
 
 func TestValidateStarlarkAcceptsPredicateControlFlow(t *testing.T) {
 	t.Parallel()
@@ -126,6 +135,79 @@ func TestModelReportsSemanticErrors(t *testing.T) {
 	}
 }
 
+func TestResolveAwaitSettingsUsesWorkflowValuesAndAllowsZeroTimeout(t *testing.T) {
+	t.Parallel()
+
+	result, err := config.Parse(validLaneKeeperConfig)
+	if err != nil {
+		t.Fatalf("Parse() error = %v", err)
+	}
+	settings, err := result.Model.ResolveAwaitSettings("release", noEnvironment)
+	if err != nil {
+		t.Fatalf("ResolveAwaitSettings() error = %v", err)
+	}
+	if got, want := settings.Interval, 10*time.Second; got != want {
+		t.Errorf("Interval = %s, want %s", got, want)
+	}
+	if got := settings.Timeout; got != 0 {
+		t.Errorf("Timeout = %s, want 0", got)
+	}
+}
+
+func TestResolveAwaitSettingsRequiresUnsafeMaximumForLongEnvironmentTimeout(t *testing.T) {
+	t.Parallel()
+
+	result, err := config.Parse(validLaneKeeperConfig)
+	if err != nil {
+		t.Fatalf("Parse() error = %v", err)
+	}
+	environment := map[string]string{
+		config.AwaitIntervalEnvironment:         "5s",
+		config.AwaitTimeoutEnvironment:          longAwaitTimeout,
+		config.AllowLongAwaitMaximumEnvironment: "172800",
+	}
+	settings, err := result.Model.ResolveAwaitSettings("release", mapEnvironment(environment))
+	if err != nil {
+		t.Fatalf("ResolveAwaitSettings() error = %v", err)
+	}
+	if got, want := settings.Interval, 5*time.Second; got != want {
+		t.Errorf("Interval = %s, want %s", got, want)
+	}
+	if got, want := settings.Timeout, 48*time.Hour; got != want {
+		t.Errorf("Timeout = %s, want %s", got, want)
+	}
+}
+
+func TestResolveAwaitSettingsRejectsLongTimeoutWithoutUnsafeMaximum(t *testing.T) {
+	t.Parallel()
+
+	result, err := config.Parse(validLaneKeeperConfig)
+	if err != nil {
+		t.Fatalf("Parse() error = %v", err)
+	}
+	_, err = result.Model.ResolveAwaitSettings("release", mapEnvironment(map[string]string{
+		config.AwaitTimeoutEnvironment: longAwaitTimeout,
+	}))
+	if err == nil || !strings.Contains(err.Error(), "must not exceed 24h0m0s") {
+		t.Fatalf("ResolveAwaitSettings() error = %v, want 24-hour maximum error", err)
+	}
+}
+
+func TestResolveAwaitSettingsRejectsMalformedUnsafeMaximum(t *testing.T) {
+	t.Parallel()
+
+	result, err := config.Parse(validLaneKeeperConfig)
+	if err != nil {
+		t.Fatalf("Parse() error = %v", err)
+	}
+	_, err = result.Model.ResolveAwaitSettings("release", mapEnvironment(map[string]string{
+		config.AllowLongAwaitMaximumEnvironment: longAwaitTimeout,
+	}))
+	if err == nil || !strings.Contains(err.Error(), "positive integer number of seconds") {
+		t.Fatalf("ResolveAwaitSettings() error = %v, want integer-seconds error", err)
+	}
+}
+
 func errorsContain(errs []error, expected string) bool {
 	for _, err := range errs {
 		if strings.Contains(err.Error(), expected) {
@@ -133,4 +215,15 @@ func errorsContain(errs []error, expected string) bool {
 		}
 	}
 	return false
+}
+
+func noEnvironment(string) (string, bool) {
+	return "", false
+}
+
+func mapEnvironment(environment map[string]string) func(string) (string, bool) {
+	return func(name string) (string, bool) {
+		value, ok := environment[name]
+		return value, ok
+	}
 }

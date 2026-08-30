@@ -11,6 +11,7 @@ version = 1
 [_.lane-keeper.defaults]
 remote = "origin"
 await_interval = "30s"
+await_timeout = "30m"
 
 [_.lane-keeper.defaults.template_date_formats]
 releaseStamp = "2006.01.02"
@@ -90,6 +91,7 @@ merge_request_template = "merge-request-message"
 
 [_.lane-keeper.workflows.release.await]
 interval = "30s"
+timeout = "15m"
 
 [tasks."check:readiness"]
 description = "Evaluate release workflow readiness once"
