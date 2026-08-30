@@ -33,6 +33,7 @@ type (
 	Model struct {
 		Version   int                 `toml:"version"`
 		Defaults  Defaults            `toml:"defaults"`
+		Shared    Shared              `toml:"shared"`
 		Checks    map[string]Check    `toml:"checks"`
 		Templates map[string]Template `toml:"templates"`
 		Workflows map[string]Workflow `toml:"workflows"`
@@ -50,6 +51,12 @@ type (
 		AwaitInterval       string            `toml:"await_interval"`
 		AwaitTimeout        string            `toml:"await_timeout"`
 		TemplateDateFormats map[string]string `toml:"template_date_formats"`
+	}
+
+	// Shared contains Starlark source defining functions/data reusable across checks.
+	// It MUST NOT reference the host API (workflow, input, git, succeed, fail).
+	Shared struct {
+		Source string `toml:"source"`
 	}
 
 	// Check contains one inline Starlark readiness predicate.
@@ -143,6 +150,11 @@ func (model *Model) Validate() []error {
 	}
 	if _, err := templateapi.Functions(model.Defaults.TemplateDateFormats); err != nil {
 		errs = append(errs, fmt.Errorf("template date formats: %w", err))
+	}
+	if strings.TrimSpace(model.Shared.Source) != "" {
+		if err := ValidateStarlark(model.Shared.Source); err != nil {
+			errs = append(errs, fmt.Errorf("shared: %w", err))
+		}
 	}
 	for _, name := range slices.Sorted(maps.Keys(model.Checks)) {
 		if strings.TrimSpace(model.Checks[name].Predicate) == "" {

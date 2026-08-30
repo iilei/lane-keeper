@@ -101,6 +101,8 @@ repository mise.toml
         +-- lane-keeper
             |
             +-- checks.<name>.predicate
+            |
+            +-- shared.source
 ```
 
 `lane-keeper` MUST NOT:
@@ -130,6 +132,66 @@ load("//policy:helpers.star", "is_ready")
 The absence of module loading ensures that the complete readiness policy remains visible in the repository configuration being reviewed.
 
 This is a deliberate readability and security property.
+
+## Shared Namespace
+
+Repeated helper functions and data (e.g. glob-style file classification) MAY be
+factored into one `[_.lane-keeper.shared]` block instead of being copy-pasted
+into every check's predicate.
+
+Example:
+
+```toml
+[_.lane-keeper.shared]
+source = """
+benign_patterns = ["*.md", "*.txt", ".github/**"]
+
+def matches_any_pattern(filename, patterns):
+    ...
+"""
+```
+
+A check references it through an explicit namespace, never through merged
+globals:
+
+```python
+disallowed = [f for f in diff.files if not shared.matches_any_pattern(f, shared.benign_patterns)]
+```
+
+`shared.source` remains part of the one reviewed `mise.toml`, so this does not
+reopen the module-loading or external-source boundaries above: it is a prelude
+within the same document, not a reference to another file or repository.
+
+### Shared Is Pure
+
+`shared.source` compiles in a bare Starlark environment with none of the
+host-provided names below predeclared: no `workflow`, `input`, `git`,
+`succeed`, or `fail`. It may define only ordinary Starlark functions and data.
+
+This is deliberate: `shared` supplies reusable logic, never decisions. A
+predicate's own result contract (`succeed()`/`fail()`) and its visibility into
+workflow/input/git state stay entirely within the predicate itself.
+
+If a shared helper needs to influence host-visible behavior, the calling
+predicate passes that behavior in explicitly as a function argument:
+
+```python
+def classify(file, on_disallowed):
+    if not matches_any_pattern(file, benign_patterns):
+        on_disallowed(file)
+```
+
+called as `shared.classify(f, lambda f: disallowed.append(f))`. `shared` itself
+never calls `git.*`, reads `workflow.*`/`input.*`, or terminates evaluation.
+
+### Compiled Once Per Workflow Run
+
+Because `shared` has no dependency on per-check host state, it is compiled
+once per workflow evaluation and the same immutable result is reused across
+all of that workflow's checks, rather than being recompiled inside each
+check's own bounded evaluation. Each check's own step/allocation/deadline
+limits continue to bound only that check's own predicate logic, including
+calls into `shared` functions, not the one-time `shared` compilation cost.
 
 ## Host API Boundary
 

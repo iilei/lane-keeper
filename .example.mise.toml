@@ -16,25 +16,10 @@ await_timeout = "30m"
 [_.lane-keeper.defaults.template_date_formats]
 releaseStamp = "2006.01.02"
 
-[_.lane-keeper.checks.benign-changes-only-on-target-since-baseline]
-description = "Only benign (non-environment-determining) changes exist on the target branch since its release baseline"
-
-# For highlighted MyST documentation, use a literalinclude directive with
-# language: starlark and the unique start-after/end-before markers below.
-predicate = """
-# starlark:benign-changes-only-on-target-since-baseline:start
-target = workflow.target_branch
-baseline = git.latest_tag(target)
-
-if baseline == None:
-    fail("no baseline tag found on %s" % target, exit_code = 10)
-
-diff = git.diff(baseline, target)
-
-if diff.is_empty:
-    succeed()
-
-# Benign file patterns: documentation, CI/CD, non-code changes
+# Functions/data reused across check predicates via the namespaced `shared`
+# value. This block MUST NOT reference workflow, input, git, succeed, or fail.
+[_.lane-keeper.shared]
+source = """
 benign_patterns = [
     "*.md",
     "*.txt",
@@ -58,11 +43,27 @@ def matches_any_pattern(filename, patterns):
         elif filename == pattern:
             return True
     return False
+"""
 
-disallowed = []
-for file in diff.files:
-    if not matches_any_pattern(file, benign_patterns):
-        disallowed.append(file)
+[_.lane-keeper.checks.benign-changes-only-on-target-since-baseline]
+description = "Only benign (non-environment-determining) changes exist on the target branch since its release baseline"
+
+# For highlighted MyST documentation, use a literalinclude directive with
+# language: starlark and the unique start-after/end-before markers below.
+predicate = """
+# starlark:benign-changes-only-on-target-since-baseline:start
+target = workflow.target_branch
+baseline = git.latest_tag(target)
+
+if baseline == None:
+    fail("no baseline tag found on %s" % target, exit_code = 10)
+
+diff = git.diff(baseline, target)
+
+if diff.is_empty:
+    succeed()
+
+disallowed = [f for f in diff.files if not shared.matches_any_pattern(f, shared.benign_patterns)]
 
 if len(disallowed) > 0:
     fail("non-benign target changes since baseline: %s" % ", ".join(disallowed), exit_code = 11)

@@ -69,3 +69,50 @@ func TestEvaluateWorkflowPassesAfterAllChecks(t *testing.T) {
 		t.Errorf("EvaluateWorkflow() = %#v, want aggregate success", result)
 	}
 }
+
+func TestEvaluateWorkflowSharesCompiledSharedAcrossChecks(t *testing.T) {
+	t.Parallel()
+
+	const checksSharedValue = "if shared.value == \"shared-value\":\n    succeed()\nfail(\"missing shared value\")\n"
+	resolved := workflow.Resolved{
+		SharedSource: "value = \"shared-value\"\n",
+		Checks: []workflow.NamedCheck{
+			{Name: firstCheckName, Check: config.Check{Predicate: checksSharedValue}},
+			{Name: secondCheckName, Check: config.Check{Predicate: checksSharedValue}},
+		},
+	}
+	result, err := policy.EvaluateWorkflow(
+		context.Background(),
+		&resolved,
+		policy.InputContext{},
+		policy.Host{},
+		policy.DefaultLimits(),
+	)
+	if err != nil {
+		t.Fatalf("EvaluateWorkflow() error = %v", err)
+	}
+	if !result.Result.Passed || result.CheckName != "" {
+		t.Errorf("EvaluateWorkflow() = %#v, want aggregate success", result)
+	}
+}
+
+func TestEvaluateWorkflowRejectsSharedHostAPIReferences(t *testing.T) {
+	t.Parallel()
+
+	resolved := workflow.Resolved{
+		SharedSource: "succeed()\n",
+		Checks: []workflow.NamedCheck{
+			{Name: firstCheckName, Check: config.Check{Predicate: succeedSource}},
+		},
+	}
+	_, err := policy.EvaluateWorkflow(
+		context.Background(),
+		&resolved,
+		policy.InputContext{},
+		policy.Host{},
+		policy.DefaultLimits(),
+	)
+	if err == nil {
+		t.Fatal("EvaluateWorkflow() error = nil, want shared compile error")
+	}
+}

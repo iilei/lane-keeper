@@ -253,6 +253,45 @@ func TestEvaluatePropagatesDeadlineToGitInspection(t *testing.T) {
 	}
 }
 
+func TestCompileSharedExposesFunctionsAndData(t *testing.T) {
+	t.Parallel()
+
+	sharedValue, err := policy.CompileShared(
+		context.Background(),
+		"benign_patterns = [\"*.md\"]\n\ndef matches(name, patterns):\n    return name in patterns\n",
+		policy.DefaultLimits(),
+	)
+	if err != nil {
+		t.Fatalf("CompileShared() error = %v", err)
+	}
+
+	result, err := policy.Evaluate(
+		context.Background(),
+		"if shared.matches(\"*.md\", shared.benign_patterns):\n    succeed()\nfail(\"shared lookup failed\")\n",
+		policy.WorkflowContext{},
+		policy.InputContext{},
+		policy.Host{Shared: sharedValue},
+		policy.DefaultLimits(),
+	)
+	if err != nil {
+		t.Fatalf("Evaluate() error = %v", err)
+	}
+	if !result.Passed {
+		t.Errorf("Evaluate() result = %#v, want passed", result)
+	}
+}
+
+func TestCompileSharedRejectsHostAPIReferences(t *testing.T) {
+	t.Parallel()
+
+	for _, source := range []string{"workflow.name", "git.resolve(\"HEAD\")", "succeed()", "fail(\"x\")"} {
+		_, err := policy.CompileShared(context.Background(), source, policy.DefaultLimits())
+		if err == nil {
+			t.Errorf("CompileShared(%q) error = nil, want undefined-name error", source)
+		}
+	}
+}
+
 func (inspector *fakeGitInspector) Resolve(ctx context.Context, _ string) (string, error) {
 	if inspector.block {
 		<-ctx.Done()

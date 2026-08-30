@@ -46,6 +46,9 @@ type (
 	// Host contains optional read-only services exposed to a predicate.
 	Host struct {
 		Git GitInspector
+		// Shared is a bare-environment-compiled starlarkstruct.Struct exposed as
+		// "shared" for functions/data reused across a workflow's checks.
+		Shared starlark.Value
 	}
 
 	// Result is the terminal readiness decision returned by a predicate.
@@ -117,6 +120,41 @@ func Evaluate(
 	return Result{}, fmt.Errorf("evaluate predicate: %w", err)
 }
 
+// CompileShared executes shared Starlark source in a bare environment with no
+// host API (no workflow, input, git, succeed, or fail) and returns the
+// resulting functions/data namespaced as "shared". It is intended to run once
+// per workflow evaluation, independent of any single check's budget.
+func CompileShared(ctx context.Context, source string, limits Limits) (starlark.Value, error) {
+	limits = normalizedLimits(limits)
+	evaluationContext, cancel := context.WithTimeout(ctx, limits.Deadline)
+	defer cancel()
+
+	thread := &starlark.Thread{
+		Name: "lane-keeper shared",
+		Print: func(thread *starlark.Thread, _ string) {
+			thread.Cancel("print() is unavailable in shared Starlark")
+		},
+	}
+	thread.SetParentContext(evaluationContext)
+	thread.SetMaxSteps(limits.MaxSteps)
+	thread.SetMaxAllocs(limits.MaxAllocs)
+	defer thread.Cancel("evaluation complete")
+
+	options := syntax.FileOptions{TopLevelControl: true}
+	thread.RequireSafety(requiredSafety)
+	globals, err := starlark.ExecFileOptions(&options, thread, "shared.star", source, nil)
+	if err != nil {
+		return nil, fmt.Errorf("evaluate shared: %w", err)
+	}
+	// Wrap on an unrestricted thread: the globals were already computed under
+	// the bounded thread above, so wrapping them carries no additional risk.
+	return starlarkstruct.SafeFromStringDict(
+		&starlark.Thread{Name: "lane-keeper shared wrap"},
+		starlark.String("shared"),
+		globals,
+	)
+}
+
 func predeclaredValues(
 	thread *starlark.Thread,
 	workflow WorkflowContext,
@@ -150,6 +188,9 @@ func predeclaredValues(
 			return nil, err
 		}
 		predeclared["git"] = gitValue
+	}
+	if host.Shared != nil {
+		predeclared["shared"] = host.Shared
 	}
 	return predeclared, nil
 }

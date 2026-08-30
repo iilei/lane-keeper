@@ -27,6 +27,7 @@ type (
 		Remote               string
 		TargetBranch         string
 		Checks               []NamedCheck
+		SharedSource         string
 		BranchTemplate       string
 		MergeRequestTemplate string
 		Await                config.AwaitSettings
@@ -75,6 +76,7 @@ func Resolve(
 		Remote:               remote,
 		TargetBranch:         targetBranch,
 		Checks:               checks,
+		SharedSource:         model.Shared.Source,
 		BranchTemplate:       configured.BranchTemplate,
 		MergeRequestTemplate: configured.MergeRequestTemplate,
 		Await:                await,

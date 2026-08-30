@@ -3,6 +3,7 @@ package policy
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/iilei/lane-keeper/internal/workflow"
 )
@@ -25,6 +26,13 @@ func EvaluateWorkflow(
 		Name:         resolved.Name,
 		TargetBranch: resolved.TargetBranch,
 		Remote:       resolved.Remote,
+	}
+	if strings.TrimSpace(resolved.SharedSource) != "" {
+		sharedValue, err := CompileShared(ctx, resolved.SharedSource, limits)
+		if err != nil {
+			return WorkflowResult{}, fmt.Errorf("shared: %w", err)
+		}
+		host.Shared = sharedValue
 	}
 	for _, check := range resolved.Checks {
 		result, err := Evaluate(ctx, check.Check.Predicate, workflowContext, input, host, limits)
