@@ -1,5 +1,7 @@
 # Lane-Keeper
 
+[![codecov](https://codecov.io/gh/iilei/lane-keeper/graph/badge.svg?token=JB6LMYL16Z)](https://codecov.io/gh/iilei/lane-keeper)
+
 ## 1. Purpose
 
 `lane-keeper` is a small, read-only repository workflow tool intended to make readiness checks, awaiting readiness, branch naming, and merge-request message rendering consistent between local development and GitLab CI.
