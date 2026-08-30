@@ -205,9 +205,9 @@ These operations belong to the compiled `lane-keeper` implementation where appli
 The predicate's responsibility is only:
 
 ```text
-                                        / ... ok: pass, exit 0
-(repository state) + (workflow input) -<
-                                        \ not ok: fail, exit !0
+                                         / ... ok: pass, exit 0
+(repository state) + (workflow input) }-{
+                                         \ not ok: fail, exit !0
 ```
 
 Whilst workflow input may or may not imply waiting for a desired state.

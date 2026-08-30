@@ -792,26 +792,33 @@ must not create duplicate branches or duplicate MRs.
 
 Repeated IDE actions should not create duplicate background pollers.
 
-Default logical watch identity:
+Default logical watch identity combines:
 
 ```text
-repository
-workflow
-source SHA
-environment
+repository root path
+workflow name
+source commit SHA
+environment (nullable)
 ```
 
-The exact fields may be configurable:
+When `lane-keeper preflight watch <workflow>` is invoked:
 
-```toml
-[lane-keeper.workflows.deploy.watch]
-identity = [
-  "repository",
-  "workflow",
-  "source_sha",
-  "environment",
-]
+```text
+If equivalent watch already running:
+    report existing process
+else:
+    launch background watcher
 ```
+
+The background watcher evaluates the same predicate repeatedly, sleeping between attempts, and exits when:
+
+```text
+user interrupts (SIGTERM, SIGINT)
+source SHA changes
+predicate error
+```
+
+Each watcher is independent and repository-local. Process lifecycle is managed by the invoking terminal or IDE, not by a global daemon.
 
 ### 6.1 Target branch resolution
 
@@ -876,43 +883,41 @@ one detached process per watch
 
 until real usage demonstrates a need for a daemon.
 
----
+## 15. Out of Scope
 
-## 15. Notifications
+The following capabilities are explicitly **not** implemented on the foreseeable roadmap:
 
-Notifications are best-effort convenience.
+### 15.1 Global state and daemon
 
-They must never alter predicate semantics or CI status.
+There is no system-wide state store, no persistent daemon, and no global watcher registry.
 
-Initial backend:
+- Each watch process is repository-local and independent.
+- No cross-repository coordination or resource limits.
+- No global list of active watches.
+- No emergency shutdown mechanism across multiple repositories.
+- Process cleanup is the responsibility of the invoking shell/IDE.
 
-```text
-system
-```
+This simplification preserves the principle that each repository owns its readiness state.
 
-Initial transition:
+### 15.2 Notifications
 
-```text
-NOT_READY -> READY
-```
+There is no notification delivery mechanism.
 
-Optional:
+- Watch runs in the foreground of the invoking terminal or IDE.
+- State transitions (ready/not-ready) are printed to stdout.
+- External notification integrations (desktop notifications, Slack, email) belong to the invoking shell/IDE, not to `lane-keeper`.
 
-```text
-NOT_READY -> ERROR
-```
+This preserves the principle that `lane-keeper` is a local tool without external dependencies or side effects.
 
-Repeated unchanged states do not notify.
+### 15.3 Retry or escalation logic
 
-Example:
+Predicates are stateless and have no memory between evaluations.
 
-```text
-lane-keeper
+- No persistent failure counters.
+- No exponential backoff on repeated failures.
+- No escalation to human review or approval.
 
-staging contribution is ready
-
-main now satisfies the configured preflight condition.
-```
+These behaviors belong to CI pipelines or higher-level orchestration, not to the readiness predicate.
 
 ---
 
@@ -1148,12 +1153,19 @@ Do not implement yet:
 ```text
 wait
 watch
-notifications
 templates
 branch creation
 GitLab API
 MR creation
 git-lane-keep alias
+```
+
+Explicitly out of scope (see section 15):
+
+```text
+notifications (no delivery mechanism)
+global state (no daemon, registry, or cross-repo coordination)
+retry/escalation logic (predicates are stateless)
 ```
 
 ### 23.1 Acceptance criteria
@@ -1392,7 +1404,7 @@ The implementation must preserve all of the following:
 10. Branch naming is deterministic.
 11. Existing branch at wrong SHA is a conflict.
 12. MR creation is idempotent.
-13. Notification delivery is non-authoritative.
+13. Notifications are out of scope (not implemented).
 14. `lane-keeper` is the canonical executable.
 15. `git lane-keep` is optional convenience.
 16. `mise` is the preferred reproducibility layer, not a mandatory IDE integration layer.
