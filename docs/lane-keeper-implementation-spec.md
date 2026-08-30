@@ -372,7 +372,7 @@ target = workflow.target_branch
 if git.latest_tag(target) == None:
     fail("no baseline tag found")
 
-pass()
+succeed()
 """
 ```
 
@@ -464,7 +464,7 @@ for file in diff.files:
     if is_critical(file):  # application logic
         fail("non-benign change: " + file)
 
-pass()
+succeed()
 ```
 
 ### 8.5 Result functions
@@ -472,7 +472,7 @@ pass()
 The predicate ends through:
 
 ```python
-pass()
+succeed()
 
 fail("reason")
 fail("reason", exit_code=2)
@@ -1141,7 +1141,7 @@ Implement:
 6. resolve one workflow
 7. parse inline starlark: predicate
 8. expose minimal read-only git API
-9. implement pass()/fail()
+9. implement succeed()/fail()
 10. implement `preflight check`
 11. stable human-readable output
 12. stable initial exit-code contract
@@ -1185,7 +1185,7 @@ target = workflow.target_branch
 if git.latest_tag(target) == None:
     fail("no baseline tag")
 
-pass()
+succeed()
 """
 
 [_.lane-keeper.workflows.deploy]

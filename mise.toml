@@ -16,6 +16,22 @@ run = "golangci-lint run"
 description = "Run Go tests"
 run = "go test ./..."
 
+[tasks."lint:starlark"]
+description = "Validate Starlark predicates in TOML files"
+run = "go run ./cmd/lane-keeper config-introspection --lint .example.mise.toml"
+
+[tasks."fmt:starlark"]
+description = "Format Starlark predicates in TOML files (requires Buildifier on PATH)"
+run = "go run ./cmd/lane-keeper config-introspection --fmt .example.mise.toml"
+
+[tasks."test:starlark-lint"]
+description = "Test the published Starlark lint hook from this repository"
+run = "prek try-repo . lane-keeper-starlark-lint --all-files"
+
+[tasks."test:starlark-fmt"]
+description = "Test the published Starlark lint hook from this repository"
+run = "prek try-repo . lane-keeper-starlark-fmt --all-files"
+
 [tasks.quality]
 description = "Run all repository quality gates"
 run = "prek run --all-files"

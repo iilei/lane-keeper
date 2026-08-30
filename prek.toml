@@ -17,3 +17,10 @@ hooks = [
     { id = "golangci-lint", name = "lint Go", entry = "golangci-lint run", language = "system", files = "(^|/)(go\\.mod|go\\.sum|.*\\.go)$", pass_filenames = false },
     { id = "go-test", name = "test Go", entry = "go test ./...", language = "system", files = "(^|/)(go\\.mod|go\\.sum|.*\\.go)$", pass_filenames = false },
 ]
+
+[[repos]]
+repo = "."
+rev = "HEAD"
+hooks = [
+    { id = "lane-keeper-starlark-lint" },
+]

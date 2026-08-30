@@ -11,13 +11,39 @@ const usageExitCode = 2
 var version = "dev"
 
 func main() {
-	if len(os.Args) == 2 && os.Args[1] == "version" {
-		fmt.Println(version)
-		return
+	const minArgs = 2
+	if len(os.Args) < minArgs {
+		fprintln(os.Stderr, "usage: lane-keeper <command> [args...]")
+		os.Exit(usageExitCode)
 	}
 
-	fprintln(os.Stderr, "usage: lane-keeper <command>")
-	os.Exit(usageExitCode)
+	cmd := os.Args[1]
+	args := os.Args[2:]
+
+	switch cmd {
+	case "version":
+		fmt.Println(version)
+		os.Exit(0)
+
+	case "config-check", "config-introspection":
+		os.Exit(configCheck(args))
+
+	case "preflight":
+		fprintln(os.Stderr, "preflight: not yet implemented")
+		os.Exit(usageExitCode)
+
+	case "branch":
+		fprintln(os.Stderr, "branch: not yet implemented")
+		os.Exit(usageExitCode)
+
+	case "mr":
+		fprintln(os.Stderr, "mr: not yet implemented")
+		os.Exit(usageExitCode)
+
+	default:
+		fprintln(os.Stderr, "usage: lane-keeper <command>")
+		os.Exit(usageExitCode)
+	}
 }
 
 func fprintln(file *os.File, message string) {

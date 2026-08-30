@@ -57,7 +57,7 @@ if baseline == None:
 if git.diff(baseline, target).is_empty:
     fail("no relevant changes since " + baseline)
 
-pass()
+succeed()
 """
 ```
 
@@ -217,7 +217,7 @@ Whilst workflow input may or may not imply waiting for a desired state.
 Predicates terminate through host-provided result functions:
 
 ```python
-pass()
+succeed()
 
 fail("reason")
 fail("reason", exit_code=2)
@@ -232,7 +232,7 @@ if baseline == None:
 if not ready:
     fail("state not ready", exit_code=1)
 
-pass()
+succeed()
 ```
 
 The host converts this result into:

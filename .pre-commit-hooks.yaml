@@ -1,0 +1,14 @@
+- id: lane-keeper-starlark-lint
+  name: lint Lane Keeper Starlark predicates
+  entry: lane-keeper config-introspection --lint
+  language: golang
+  files: \.toml$
+
+- id: lane-keeper-starlark-fmt
+  name: format Lane Keeper Starlark predicates
+  entry: lane-keeper config-introspection --fmt
+  language: golang
+  files: \.toml$
+  additional_dependencies:
+    # Buildifier v8.5.1 release; see https://github.com/bazel-contrib/buildtools/issues/1237.
+    - github.com/bazelbuild/buildtools/buildifier@v0.0.0-20260128144711-f6a198225003
