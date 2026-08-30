@@ -24,6 +24,30 @@ type readinessRepositoryPaths struct {
 	configPath     string
 }
 
+// assertRequiresTemplate exercises a rendering command against a workflow with no
+// template configured and asserts it fails with the expected diagnostic.
+func assertRequiresTemplate(
+	t *testing.T,
+	paths readinessRepositoryPaths,
+	run func(ctx context.Context, args []string, stdout, stderr *bytes.Buffer) int,
+	command, wantErrSubstring string,
+) {
+	t.Helper()
+	var stdout, stderr bytes.Buffer
+	exitCode := run(
+		context.Background(),
+		[]string{command, workflowFlag, releaseWorkflow, configFlag, paths.configPath},
+		&stdout,
+		&stderr,
+	)
+	if exitCode != usageExitCode {
+		t.Fatalf("exit code = %d, want %d; stderr = %q", exitCode, usageExitCode, stderr.String())
+	}
+	if !strings.Contains(stderr.String(), wantErrSubstring) {
+		t.Errorf("stderr = %q, want to contain %q", stderr.String(), wantErrSubstring)
+	}
+}
+
 func TestRunReadinessCheckReportsReady(t *testing.T) {
 	paths := readinessRepository(t, "succeed()")
 	var stdout, stderr bytes.Buffer

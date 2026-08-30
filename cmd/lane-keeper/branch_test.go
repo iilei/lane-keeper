@@ -14,6 +14,8 @@ const (
 	branchNameCommand  = "name"
 	environmentFlag    = "--environment"
 	stagingEnvironment = "staging"
+	ticketFlag         = "--ticket"
+	ticketValue        = "ABC-123"
 )
 
 func TestRunBranchNameRendersAndValidatesBranch(t *testing.T) {
@@ -24,7 +26,7 @@ func TestRunBranchNameRendersAndValidatesBranch(t *testing.T) {
 		context.Background(),
 		[]string{
 			branchNameCommand, workflowFlag, releaseWorkflow, configFlag, paths.configPath,
-			"--ticket", "ABC-123", environmentFlag, stagingEnvironment,
+			ticketFlag, ticketValue, environmentFlag, stagingEnvironment,
 		},
 		&stdout,
 		&stderr,
@@ -68,48 +70,17 @@ func TestRunBranchNameRejectsInvalidRenderedRef(t *testing.T) {
 }
 
 func TestRunBranchNameRequiresBranchTemplate(t *testing.T) {
-	if _, err := exec.LookPath("git"); err != nil {
-		t.Skip("git is not available")
-	}
-	repositoryRoot := t.TempDir()
-	runGit(t, repositoryRoot, "init", "--initial-branch=master")
-	runGit(t, repositoryRoot, "config", "user.email", "test@example.com")
-	runGit(t, repositoryRoot, "config", "user.name", "Test")
-	runGit(t, repositoryRoot, "commit", "--allow-empty", "-m", "init")
-	configPath := filepath.Join(repositoryRoot, "lane-keeper.toml")
-	content := `
-[_.lane-keeper]
-version = 1
-
-[_.lane-keeper.defaults]
-remote = "origin"
-
-[_.lane-keeper.checks.ready]
-predicate = """succeed()"""
-
-[_.lane-keeper.workflows.release]
-checks = ["ready"]
-target_branch = { resolve = "literal", value = "master" }
-`
-	if err := os.WriteFile(configPath, []byte(content), 0o600); err != nil {
-		t.Fatalf("WriteFile(): %v", err)
-	}
-
-	var stdout, stderr bytes.Buffer
-	exitCode := runBranch(
-		context.Background(),
-		[]string{branchNameCommand, workflowFlag, releaseWorkflow, configFlag, configPath},
-		&stdout,
-		&stderr,
-		func() (string, error) { return repositoryRoot, nil },
-		noEnvironment,
-	)
-	if exitCode != usageExitCode {
-		t.Fatalf("runBranch() exit code = %d, want %d; stderr = %q", exitCode, usageExitCode, stderr.String())
-	}
-	if !strings.Contains(stderr.String(), "does not configure a branch template") {
-		t.Errorf("stderr = %q, want missing branch template error", stderr.String())
-	}
+	paths := noTemplateRepository(t)
+	assertRequiresTemplate(t, paths, func(ctx context.Context, args []string, stdout, stderr *bytes.Buffer) int {
+		return runBranch(
+			ctx,
+			args,
+			stdout,
+			stderr,
+			func() (string, error) { return paths.repositoryRoot, nil },
+			noEnvironment,
+		)
+	}, branchNameCommand, "does not configure a branch template")
 }
 
 func TestRunBranchRequiresWorkflow(t *testing.T) {
@@ -148,6 +119,38 @@ template = "` + branchTemplate + `"
 checks = ["ready"]
 target_branch = { resolve = "literal", value = "master" }
 branch_template = "contribution-branch"
+`
+	if err := os.WriteFile(configPath, []byte(content), 0o600); err != nil {
+		t.Fatalf("WriteFile(): %v", err)
+	}
+	return readinessRepositoryPaths{repositoryRoot: repositoryRoot, configPath: configPath}
+}
+
+// noTemplateRepository returns a valid workflow with no branch or merge-request template configured.
+func noTemplateRepository(t *testing.T) readinessRepositoryPaths {
+	t.Helper()
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git is not available")
+	}
+	repositoryRoot := t.TempDir()
+	runGit(t, repositoryRoot, "init", "--initial-branch=master")
+	runGit(t, repositoryRoot, "config", "user.email", "test@example.com")
+	runGit(t, repositoryRoot, "config", "user.name", "Test")
+	runGit(t, repositoryRoot, "commit", "--allow-empty", "-m", "init")
+	configPath := filepath.Join(repositoryRoot, "lane-keeper.toml")
+	content := `
+[_.lane-keeper]
+version = 1
+
+[_.lane-keeper.defaults]
+remote = "origin"
+
+[_.lane-keeper.checks.ready]
+predicate = """succeed()"""
+
+[_.lane-keeper.workflows.release]
+checks = ["ready"]
+target_branch = { resolve = "literal", value = "master" }
 `
 	if err := os.WriteFile(configPath, []byte(content), 0o600); err != nil {
 		t.Fatalf("WriteFile(): %v", err)

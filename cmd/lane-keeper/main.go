@@ -35,8 +35,7 @@ func main() {
 		os.Exit(branch(args))
 
 	case "mr":
-		fprintln(os.Stderr, "mr: not yet implemented")
-		os.Exit(usageExitCode)
+		os.Exit(mr(args))
 
 	default:
 		fprintln(os.Stderr, "usage: lane-keeper <command>")
