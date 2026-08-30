@@ -1,0 +1,25 @@
+[tools]
+go = "1.25.0"
+prek = "0.5.0"
+rumdl = "0.2.62"
+golangci-lint = "2.13.2"
+
+[tasks.format]
+description = "Format Go sources"
+run = "golangci-lint fmt"
+
+[tasks.lint]
+description = "Run Go static analysis"
+run = "golangci-lint run"
+
+[tasks.test]
+description = "Run Go tests"
+run = "go test ./..."
+
+[tasks.quality]
+description = "Run all repository quality gates"
+run = "prek run --all-files"
+
+[tasks.hooks-install]
+description = "Install Prek Git hook shims"
+run = "prek install"

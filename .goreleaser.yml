@@ -1,0 +1,169 @@
+version: 2
+
+before:
+  hooks:
+    - go mod tidy
+    - go test ./...
+
+builds:
+  - id: lane-keeper-linux
+    main: ./cmd/lane-keeper
+    binary: lane-keeper
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+    goarch:
+      - amd64
+      - arm64
+      - arm
+    goarm:
+      - "7"  # ARMv7
+    ldflags:
+      - -s -w
+      - -X main.version={{.Version}}
+      - -X main.commit={{.Commit}}
+      - -X main.date={{.Date}}
+
+  - id: lane-keeper-darwin
+    main: ./cmd/lane-keeper
+    binary: lane-keeper
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - darwin
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w
+      - -X main.version={{.Version}}
+      - -X main.commit={{.Commit}}
+      - -X main.date={{.Date}}
+
+  - id: git-keep-lane-linux
+    main: ./cmd/git-keep-lane
+    binary: git-keep-lane
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w
+      - -X main.version={{.Version}}
+      - -X main.commit={{.Commit}}
+      - -X main.date={{.Date}}
+
+  - id: git-keep-lane-darwin
+    main: ./cmd/git-keep-lane
+    binary: git-keep-lane
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - darwin
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w
+      - -X main.version={{.Version}}
+      - -X main.commit={{.Commit}}
+      - -X main.date={{.Date}}
+
+archives:
+  - id: unix-archives
+    ids:
+      - lane-keeper-linux
+      - lane-keeper-darwin
+      - git-keep-lane-linux
+      - git-keep-lane-darwin
+    name_template: >-
+      {{ .ProjectName }}_{{ .Version }}_{{ .Os }}_
+      {{- if and (eq .Os "darwin") (eq .Arch "all") -}}
+      universal2
+      {{- else if eq .Arch "amd64" -}}
+      x86_64
+      {{- else if eq .Arch "386" -}}
+      i386
+      {{- else -}}
+      {{ .Arch }}
+      {{- end -}}
+      {{- if eq .Arch "arm" }}v{{ .Arm }}{{ end }}
+    formats:
+      - tar.gz
+    files:
+      - README.md
+
+universal_binaries:
+  - id: lane-keeper-darwin
+    ids:
+      - lane-keeper-darwin
+    replace: true
+  - id: git-keep-lane-darwin
+    ids:
+      - git-keep-lane-darwin
+    replace: true
+
+checksum:
+  name_template: 'checksums.txt'
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-next"
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - '^docs:'
+      - '^test:'
+      - '^chore:'
+      - Merge pull request
+      - Merge branch
+  groups:
+    - title: Features
+      regexp: '^.*?feat(\([[:word:]]+\))??!?:.+$'
+      order: 0
+    - title: 'Bug fixes'
+      regexp: '^.*?fix(\([[:word:]]+\))??!?:.+$'
+      order: 1
+    - title: Others
+      order: 999
+
+signs:
+  - cmd: gpg
+    args:
+      - "--batch"
+      - "--local-user"
+      - "{{ .Env.GPG_FINGERPRINT }}"
+      - "--output"
+      - "${signature}"
+      - "--detach-sign"
+      - "${artifact}"
+    artifacts: checksum
+    output: true
+
+release:
+  prerelease: auto
+  draft: false
+  replace_existing_draft: true
+  make_latest: true
+  mode: replace
+  header: |
+    ## Lane-Keeper {{ .Tag }} ({{ .Date }})
+
+    Configurable repository preflight checks and workflow helpers.
+  footer: |
+    **Full Changelog**: https://github.com/iilei/lane-keeper/compare/{{ .PreviousTag }}...{{ .Tag }}
+
+    ## Installation
+
+    ### Binary Download
+    Download the appropriate binary for your platform from the assets below.
+
+    ### Using Go
+    ```bash
+    go install github.com/iilei/lane-keeper/cmd/lane-keeper@{{ .Tag }}
+    ```

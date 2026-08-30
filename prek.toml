@@ -1,0 +1,19 @@
+#:schema https://www.schemastore.org/prek.json
+
+[[repos]]
+repo = "builtin"
+hooks = [
+    { id = "trailing-whitespace" },
+    { id = "end-of-file-fixer" },
+    { id = "check-merge-conflict" },
+    { id = "check-added-large-files" },
+]
+
+[[repos]]
+repo = "local"
+hooks = [
+    { id = "rumdl", name = "lint Markdown", entry = "rumdl check", language = "system", types = ["markdown"] },
+    { id = "golangci-format", name = "check Go formatting", entry = "golangci-lint fmt --diff", language = "system", files = "(^|/)(go\\.mod|go\\.sum|.*\\.go)$", pass_filenames = false },
+    { id = "golangci-lint", name = "lint Go", entry = "golangci-lint run", language = "system", files = "(^|/)(go\\.mod|go\\.sum|.*\\.go)$", pass_filenames = false },
+    { id = "go-test", name = "test Go", entry = "go test ./...", language = "system", files = "(^|/)(go\\.mod|go\\.sum|.*\\.go)$", pass_filenames = false },
+]

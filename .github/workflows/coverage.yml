@@ -1,0 +1,36 @@
+name: Coverage
+
+on:
+  push:
+    branches:
+      - master
+      - main
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  coverage:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Set up Mise
+        uses: jdx/mise-action@v2
+
+      - name: Run quality gates
+        run: mise run quality
+
+      - name: Run coverage
+        run: |
+          mkdir -p coverage
+          mise exec go -- go test -coverprofile=coverage/coverage.out ./...
+          mise exec go -- go tool cover -func=coverage/coverage.out
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v4
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: coverage/coverage.out
+          fail_ci_if_error: true
