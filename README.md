@@ -120,6 +120,8 @@ The two config shapes are not interchangeable: the implicit `mise.toml`
 lookup always requires the `[_.lane-keeper]` nesting, and an explicit
 `--config` file always uses the root-level shape above.
 
+In additon: explicit setting of `--cfg-qualifier` to blank (root level) or `_.lane-keeper` *(further documentation pending)*.
+
 ## Tool Version Advisory
 
 When the repository's `mise.toml` pins a `lane-keeper` version under
