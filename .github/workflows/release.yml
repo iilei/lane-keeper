@@ -117,13 +117,13 @@ jobs:
           SHA_MACOS_UNIVERSAL2="$(fetch_sha "lane-keeper_${VERSION}_darwin_universal2.tar.gz")"
           SHA_LINUX_X86_64="$(fetch_sha "lane-keeper_${VERSION}_linux_x86_64.tar.gz")"
           SHA_LINUX_ARM64="$(fetch_sha "lane-keeper_${VERSION}_linux_arm64.tar.gz")"
-          SHA256_LINUX_ARMV7="$(fetch_sha "lane-keeper_${VERSION}_linux_armv7.tar.gz")"
+          SHA_LINUX_ARMV7="$(fetch_sha "lane-keeper_${VERSION}_linux_armv7.tar.gz")"
           payload="$(jq -n \
             --arg version "$VERSION" \
             --arg sha_macos_universal2 "$SHA_MACOS_UNIVERSAL2" \
             --arg sha256_linux_x86_64 "$SHA_LINUX_X86_64" \
             --arg sha_linux_arm64 "$SHA_LINUX_ARM64" \
-            --arg sha_linux_armv7 "$SHA256_LINUX_ARMV7" \
+            --arg sha_linux_armv7 "$SHA_LINUX_ARMV7" \
             --arg repository "$REPOSITORY" \
             '{
               event_type: "formula-update",
