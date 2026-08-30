@@ -57,6 +57,8 @@ jobs:
       - name: Publish SHA256 sidecars
         run: |
           cd dist
+          set -euo pipefail
+          shopt -s nullglob
           for file in *.tar.gz *.zip; do
             sha256sum "$file" | awk '{print $1}' > "$file.sha256"
           done
