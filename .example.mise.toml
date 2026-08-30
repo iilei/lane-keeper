@@ -58,14 +58,12 @@ def matches_any_pattern(filename, patterns):
             return True
     return False
 
-all_benign = True
 disallowed = []
 for file in diff.files:
     if not matches_any_pattern(file, benign_patterns):
-        all_benign = False
         disallowed.append(file)
 
-if not all_benign:
+if len(disallowed) > 0:
     fail("non-benign target changes since baseline: %s" % ", ".join(disallowed), exit_code = 11)
 
 succeed()

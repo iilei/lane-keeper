@@ -61,11 +61,25 @@ func introspectConfigFile(ctx context.Context, tomlPath string, format bool) con
 		return configIntrospectionResult{Errors: []error{fmt.Errorf("read %s: %w", tomlPath, err)}}
 	}
 
+	parseResult, err := config.Parse(string(content))
+	if err != nil {
+		return configIntrospectionResult{Errors: []error{fmt.Errorf("%s: %w", tomlPath, err)}}
+	}
+	result := configIntrospectionResult{}
+	if parseResult.Found {
+		for _, validationError := range parseResult.Model.Validate() {
+			result.Errors = append(result.Errors, fmt.Errorf("%s: %w", tomlPath, validationError))
+		}
+	}
+	if len(result.Errors) > 0 {
+		return result
+	}
+
 	previews, err := config.PreviewDateLayouts(string(content))
 	if err != nil {
 		return configIntrospectionResult{Errors: []error{fmt.Errorf("%s: %w", tomlPath, err)}}
 	}
-	result := configIntrospectionResult{DateLayoutPreviews: make([]string, 0, len(previews))}
+	result.DateLayoutPreviews = make([]string, 0, len(previews))
 	for _, preview := range previews {
 		result.DateLayoutPreviews = append(result.DateLayoutPreviews, fmt.Sprintf(
 			"%s: date layout %q (%q) renders as %q for Go reference time",
@@ -96,11 +110,7 @@ func writeFormattedConfig(tomlPath, content string) error {
 	if err != nil {
 		return err
 	}
-	if err := os.WriteFile(
-		tomlPath,
-		[]byte(content),
-		fileInfo.Mode(),
-	); err != nil {
+	if err := os.WriteFile(tomlPath, []byte(content), fileInfo.Mode()); err != nil {
 		return err
 	}
 	return nil

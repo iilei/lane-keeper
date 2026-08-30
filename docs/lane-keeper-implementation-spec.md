@@ -38,17 +38,20 @@ otherwise. The current executable implements `version` and
 Current config introspection can:
 
 - parse TOML;
+- strictly decode `[_.lane-keeper]` while ignoring unrelated Mise keys;
+- validate schema version, durations, date layouts, template shapes, workflow
+  checks, target-branch resolver combinations, and template references;
 - locate ordinary triple-quoted predicates beneath
   `[_.lane-keeper.checks.<name>]`;
 - parse extracted predicates with Canonical Starlark without executing them;
 - format extracted predicates through an external `buildifier` executable;
 - validate and preview custom template date layouts.
 
-It does not yet perform complete configuration-schema validation, resolve
-workflows or Git state, execute Starlark, expose the planned host API, evaluate
-readiness, or render branch and merge-request templates. Predicate extraction
-is currently limited to the documented ordinary triple-quoted representation;
-a TOML-structure-driven extractor remains planned.
+It does not yet resolve workflows or Git state, execute Starlark, expose the
+planned host API, evaluate readiness, or render branch and merge-request
+templates. Predicate extraction is currently limited to the documented
+ordinary triple-quoted representation; a TOML-structure-driven extractor
+remains planned.
 
 ---
 

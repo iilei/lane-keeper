@@ -20,7 +20,8 @@ The current executable implements:
 
 - `lane-keeper version`;
 - `lane-keeper config-introspection --lint <toml-files...>` for TOML validation,
-  Canonical Starlark syntax parsing, and custom date-layout previews;
+  typed Lane-Keeper schema and reference validation, Canonical Starlark syntax
+  parsing, and custom date-layout previews;
 - `lane-keeper config-introspection --fmt <toml-files...>` for in-place
   Buildifier formatting of embedded predicates;
 - the `git-keep-lane` forwarding executable;
