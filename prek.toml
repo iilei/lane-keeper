@@ -20,7 +20,8 @@ hooks = [
 
 [[repos]]
 repo = "."
-rev = "HEAD"
+rev = "223ef48324f3e9c1cb238a27f725232f8417f0b0"
 hooks = [
     { id = "lane-keeper-starlark-lint" },
+    { id = "lane-keeper-starlark-fmt" },
 ]
