@@ -32,15 +32,19 @@ The goal is therefore to retain the readability advantage of Starlark while maki
 
 `lane-keeper` will support **inline Starlark predicates only**.
 
-The Starlark source MUST be obtained directly from the repository-owned `mise.toml`, from a configured field under the `[lane-keeper]` namespace.
+The Starlark source MUST be obtained directly from the repository-owned
+`mise.toml`, from a configured field under the `[_.lane-keeper]` metadata
+namespace.
 
 Example:
 
 ```toml
-[lane-keeper]
+[_]
+
+[_.lane-keeper]
 version = 1
 
-[lane-keeper.checks.main-ready]
+[_.lane-keeper.checks.main-ready]
 description = "Whether the target branch is ready for this contribution"
 
 predicate = """
@@ -82,7 +86,9 @@ The only permitted source of executable repository policy is:
 ```text
 repository mise.toml
     |
-    +-- [lane-keeper]
+    +-- [_]
+        |
+        +-- lane-keeper
             |
             +-- checks.<name>.predicate
 ```
@@ -278,7 +284,7 @@ detect relevant state transition
 notify
 ```
 
-All three use the exact same predicate.
+All three use the exact same ordered predicate set.
 
 This preserves the ADR requirement that local and CI behavior must not drift.
 
@@ -477,7 +483,7 @@ Therefore arbitrary command execution is not part of the preflight predicate mod
 7. No arbitrary filesystem access is exposed.
 8. No Git or GitLab mutation is exposed to predicates.
 9. Predicates cannot sleep, poll, watch, or notify.
-10. `check`, `wait`, and `watch` evaluate the same predicate implementation.
+10. `check`, `wait`, and `watch` evaluate the same ordered predicate set.
 11. CI evaluates the predicate exactly once.
 12. Interpreter errors fail closed.
 13. Predicate execution is resource-bounded.
@@ -512,7 +518,7 @@ pass({
 """
 
 [lane-keeper.workflows.deploy]
-check = "main-ready"
+checks = ["main-ready"]
 target_branch = "main"
 ```
 

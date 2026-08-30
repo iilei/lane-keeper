@@ -157,6 +157,9 @@ The preferred consuming-repository installation is through `mise`.
 
 Example:
 
+The complete copy/merge template is maintained in
+`.example.mise.toml`.
+
 ```toml
 [tools]
 lane-keeper = "0.1.0"
@@ -180,14 +183,18 @@ The preferred repository configuration lives directly in:
 mise.toml
 ```
 
-under the dedicated namespace:
+under Mise's reserved metadata table and Lane-Keeper's dedicated namespace:
 
 ```toml
-[lane-keeper]
+[_]
+
+[_.lane-keeper]
 version = 1
 ```
 
-`lane-keeper` must parse only the `[lane-keeper]` subtree and ignore unrelated `mise.toml` configuration.
+`lane-keeper` must parse only the `[_.lane-keeper]` subtree and ignore
+unrelated `mise.toml` configuration. Mise ignores the `[_]` metadata table, so
+this does not produce unknown-field warnings when developers run Mise tasks.
 
 This keeps:
 
@@ -206,7 +213,7 @@ Recommended precedence:
 
 ```text
 1. explicit --config path
-2. repository mise.toml containing [lane-keeper]
+2. repository mise.toml containing [_.lane-keeper]
 3. built-in defaults
 ```
 
@@ -223,7 +230,6 @@ defaults
 checks
 templates
 workflows
-notifications
 ```
 
 Example:
@@ -232,17 +238,16 @@ Example:
 [tools]
 lane-keeper = "0.1.0"
 
-[lane-keeper]
+[_]
+
+[_.lane-keeper]
 version = 1
 
-[lane-keeper.defaults]
+[_.lane-keeper.defaults]
 remote = "origin"
 wait_interval = "30s"
 
-[lane-keeper.notifications]
-backend = "system"
-
-[lane-keeper.checks.main-ready]
+[_.lane-keeper.checks.main-ready]
 description = "Whether the target branch is currently ready for this contribution"
 
 predicate = """
@@ -264,22 +269,30 @@ pass({
 })
 """
 
-[lane-keeper.templates.contribution-branch]
+[_.lane-keeper.templates.contribution-branch]
 template = """
 {{ if .ticket }}{{ .ticket }}-{{ end }}{{ .yyMMdd }}-{{ .environment }}-{{ .shortSha }}
 """
 
-[lane-keeper.workflows.deploy]
-description = "Prepare a deployment-oriented contribution"
-check = "main-ready"
-remote = "origin"
-target_branch = "main"
-branch_template = "contribution-branch"
+[_.lane-keeper.templates.merge-request-message]
+title = "{{ if .ticket }}{{ .ticket }}: {{ end }}Prepare {{ .environment }} contribution"
+body = """
+Source commit: {{ .shortSha }}
+Target branch: {{ .target_branch }}
+"""
 
-[lane-keeper.workflows.deploy.wait]
+[_.lane-keeper.workflows.deploy]
+description = "Prepare a deployment-oriented contribution"
+checks = ["main-ready"]
+remote = "origin"
+target_branch_resolver = "git-remote-head"
+branch_template = "contribution-branch"
+merge_request_template = "merge-request-message"
+
+[_.lane-keeper.workflows.deploy.wait]
 interval = "30s"
 
-[lane-keeper.workflows.deploy.watch]
+[_.lane-keeper.workflows.deploy.watch]
 notify = true
 identity = [
   "repository",
@@ -300,6 +313,9 @@ run = "lane-keeper preflight wait deploy"
 
 [tasks."tmpl:branch-name"]
 run = "lane-keeper branch name deploy"
+
+[tasks."tmpl:merge-req-message"]
+run = "lane-keeper mr render deploy"
 
 [tasks."git:create-mr-when-ready"]
 run = "lane-keeper mr create-when-ready deploy"
@@ -491,7 +507,7 @@ Semantics:
 resolve config
 resolve workflow
 resolve invocation inputs
-evaluate named predicate exactly once
+evaluate each configured predicate once, in order
 print result
 return exit status
 ```
@@ -507,14 +523,14 @@ lane-keeper preflight wait <workflow>
 Semantics:
 
 ```text
-evaluate the same predicate
+evaluate the same ordered checks
 if not ready:
     sleep configured interval
     repeat
 stop when ready or interrupted
 ```
 
-`wait` must not implement a second version of the predicate.
+`wait` must not implement a second version of the aggregate preflight.
 
 This preserves the ADR invariant that waiting delegates to the canonical readiness logic.
 
@@ -534,7 +550,7 @@ otherwise dispatch background watcher
 return promptly
 
 background watcher:
-    evaluate same predicate
+  evaluate same ordered checks
     sleep between attempts
     detect state transitions
     notify on configured transition
@@ -659,6 +675,35 @@ CLI override
 
 Before remote mutation, validate the rendered branch name as a valid Git ref.
 
+### 11.3 Merge-request message templates
+
+A workflow may select a repository message template through
+`merge_request_template`. A message template has separate `title` and `body`
+fields; both are rendered with the template context. The context additionally
+includes `target_branch` after target-branch resolution.
+
+```toml
+[_.lane-keeper.templates.merge-request-message]
+title = "{{ .ticket }}: prepare contribution"
+body = """
+Source commit: {{ .shortSha }}
+Target branch: {{ .target_branch }}
+"""
+```
+
+`lane-keeper mr render <workflow>` is a pure operation that renders and prints
+the title and body before any remote mutation. Repositories may expose it as:
+
+```toml
+[tasks."tmpl:merge-req-message"]
+run = "lane-keeper mr render deploy"
+```
+
+The title and body MUST remain separate structured fields. Lane-Keeper MUST NOT
+split one rendered template on blank lines: a Markdown body commonly contains
+multiple paragraphs, so two consecutive newlines are not an unambiguous
+delimiter.
+
 ---
 
 ## 12. Branch Idempotency
@@ -746,6 +791,47 @@ identity = [
   "environment",
 ]
 ```
+
+### 6.1 Target branch resolution
+
+Each workflow MUST declare exactly one target-branch field:
+
+```text
+target_branch_literal
+target_branch_resolver
+```
+
+`target_branch_literal` contains a valid literal branch name.
+
+`target_branch_resolver` selects a Lane-Keeper-defined resolver. Initially,
+`git-remote-head` resolves the configured remote's symbolic `HEAD` reference,
+such as `refs/remotes/origin/HEAD`, then uses its branch component. This is the
+remote's default branch: the leading branch proposed for a new merge request.
+Resolution failure is a configuration/repository error; Lane-Keeper MUST NOT
+silently substitute `main` or `master`.
+
+Configuring both fields, or neither field, is invalid. Resolver names are a
+closed Lane-Keeper API: configuration MUST NOT contain arbitrary shell commands
+or scripts.
+
+The resolved branch becomes `workflow.target_branch` for Starlark evaluation.
+This lets a repository use a stable declarative alias while retaining the
+actual branch name in output and result metadata.
+
+### 6.2 Workflow checks
+
+Each workflow MUST declare a non-empty, ordered `checks` array. Each entry
+names a configured check.
+
+```toml
+[_.lane-keeper.workflows.deploy]
+checks = ["branch-ready", "required-tag-present"]
+```
+
+Preflight evaluates each named predicate once, in array order. Evaluation stops
+at the first not-ready result or error. A workflow is ready only when every
+check passes. `wait` and `watch` MUST reuse this aggregate preflight evaluation;
+they must not implement a separate per-check execution path.
 
 Equivalent active watch:
 
@@ -1040,12 +1126,13 @@ git-lane-keep alias
 Given:
 
 ```toml
-[lane-keeper]
+[_]
+
+[_.lane-keeper]
 version = 1
 
-[lane-keeper.checks.main-ready]
+[_.lane-keeper.checks.main-ready]
 predicate = """
-starlark:
 target = workflow.target_branch
 
 if git.latest_tag(target) == None:
@@ -1054,9 +1141,9 @@ if git.latest_tag(target) == None:
 pass()
 """
 
-[lane-keeper.workflows.deploy]
-check = "main-ready"
-target_branch = "main"
+[_.lane-keeper.workflows.deploy]
+checks = ["main-ready"]
+target_branch_literal = "main"
 ```
 
 this command:
@@ -1072,7 +1159,7 @@ must:
 - resolve workflow.deploy;
 - expose workflow.target_branch to Starlark;
 - expose git.latest_tag(ref);
-- evaluate the predicate exactly once;
+- evaluate each configured predicate once;
 - return 0 on pass;
 - return 1 on not-ready;
 - print the fail reason when not-ready;
@@ -1259,10 +1346,10 @@ presentation
 The implementation must preserve all of the following:
 
 1. Repository policy remains visible in the consuming repository.
-2. Readiness has exactly one predicate implementation.
-3. CI evaluates the predicate once and never waits.
-4. Local wait delegates to the same predicate.
-5. Watch delegates to the same predicate.
+2. Readiness has exactly one implementation per configured predicate.
+3. CI evaluates each configured predicate once and never waits.
+4. Local wait delegates to the same aggregate preflight.
+5. Watch delegates to the same aggregate preflight.
 6. Preflight policy is read-only.
 7. Local tooling is optional.
 8. CI remains authoritative.
