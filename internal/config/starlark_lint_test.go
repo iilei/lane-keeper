@@ -69,32 +69,32 @@ func TestValidateStarlarkRejectsInvalidSyntax(t *testing.T) {
 func TestParseIgnoresUnrelatedMiseConfiguration(t *testing.T) {
 	t.Parallel()
 
-	result, err := config.Parse("[tools]\ngo = \"1.25\"\n")
+	_, found, err := config.ParseAtQualifier("[tools]\ngo = \"1.25\"\n", "_.lane-keeper")
 	if err != nil {
-		t.Fatalf("Parse() error = %v", err)
+		t.Fatalf("ParseAtQualifier() error = %v", err)
 	}
-	if result.Found {
-		t.Errorf("Parse() result = %#v, want not found", result)
+	if found {
+		t.Errorf("ParseAtQualifier() found = true, want false")
 	}
 }
 
 func TestParseRejectsUnknownLaneKeeperField(t *testing.T) {
 	t.Parallel()
 
-	_, err := config.Parse("[_.lane-keeper]\nversion = 1\nunknown = true\n")
+	_, _, err := config.ParseAtQualifier("[_.lane-keeper]\nversion = 1\nunknown = true\n", "_.lane-keeper")
 	if err == nil {
-		t.Fatal("Parse() error = nil, want unknown-field error")
+		t.Fatal("ParseAtQualifier() error = nil, want unknown-field error")
 	}
 }
 
 func TestModelValidatesCompleteConfiguration(t *testing.T) {
 	t.Parallel()
 
-	result, err := config.Parse(validLaneKeeperConfig)
+	model, _, err := config.ParseAtQualifier(validLaneKeeperConfig, "_.lane-keeper")
 	if err != nil {
-		t.Fatalf("Parse() error = %v", err)
+		t.Fatalf("ParseAtQualifier() error = %v", err)
 	}
-	if errs := result.Model.Validate(); len(errs) > 0 {
+	if errs := model.Validate(); len(errs) > 0 {
 		t.Fatalf("Validate() errors = %v, want none", errs)
 	}
 }
@@ -115,11 +115,11 @@ func TestModelReportsSemanticErrors(t *testing.T) {
 		"branch_template = \"missing\"",
 	).Replace(validLaneKeeperConfig)
 
-	result, err := config.Parse(content)
+	model, _, err := config.ParseAtQualifier(content, "_.lane-keeper")
 	if err != nil {
-		t.Fatalf("Parse() error = %v", err)
+		t.Fatalf("ParseAtQualifier() error = %v", err)
 	}
-	errs := result.Model.Validate()
+	errs := model.Validate()
 	for _, expected := range []string{
 		"version must be 1",
 		"invalid duration",
@@ -138,11 +138,11 @@ func TestModelReportsSemanticErrors(t *testing.T) {
 func TestResolveAwaitSettingsUsesWorkflowValuesAndAllowsZeroTimeout(t *testing.T) {
 	t.Parallel()
 
-	result, err := config.Parse(validLaneKeeperConfig)
+	model, _, err := config.ParseAtQualifier(validLaneKeeperConfig, "_.lane-keeper")
 	if err != nil {
-		t.Fatalf("Parse() error = %v", err)
+		t.Fatalf("ParseAtQualifier() error = %v", err)
 	}
-	settings, err := result.Model.ResolveAwaitSettings("release", noEnvironment)
+	settings, err := model.ResolveAwaitSettings("release", noEnvironment)
 	if err != nil {
 		t.Fatalf("ResolveAwaitSettings() error = %v", err)
 	}
@@ -157,16 +157,16 @@ func TestResolveAwaitSettingsUsesWorkflowValuesAndAllowsZeroTimeout(t *testing.T
 func TestResolveAwaitSettingsRequiresUnsafeMaximumForLongEnvironmentTimeout(t *testing.T) {
 	t.Parallel()
 
-	result, err := config.Parse(validLaneKeeperConfig)
+	model, _, err := config.ParseAtQualifier(validLaneKeeperConfig, "_.lane-keeper")
 	if err != nil {
-		t.Fatalf("Parse() error = %v", err)
+		t.Fatalf("ParseAtQualifier() error = %v", err)
 	}
 	environment := map[string]string{
 		config.AwaitIntervalEnvironment:         "5s",
 		config.AwaitTimeoutEnvironment:          longAwaitTimeout,
 		config.AllowLongAwaitMaximumEnvironment: "172800",
 	}
-	settings, err := result.Model.ResolveAwaitSettings("release", mapEnvironment(environment))
+	settings, err := model.ResolveAwaitSettings("release", mapEnvironment(environment))
 	if err != nil {
 		t.Fatalf("ResolveAwaitSettings() error = %v", err)
 	}
@@ -181,11 +181,11 @@ func TestResolveAwaitSettingsRequiresUnsafeMaximumForLongEnvironmentTimeout(t *t
 func TestResolveAwaitSettingsRejectsLongTimeoutWithoutUnsafeMaximum(t *testing.T) {
 	t.Parallel()
 
-	result, err := config.Parse(validLaneKeeperConfig)
+	model, _, err := config.ParseAtQualifier(validLaneKeeperConfig, "_.lane-keeper")
 	if err != nil {
-		t.Fatalf("Parse() error = %v", err)
+		t.Fatalf("ParseAtQualifier() error = %v", err)
 	}
-	_, err = result.Model.ResolveAwaitSettings("release", mapEnvironment(map[string]string{
+	_, err = model.ResolveAwaitSettings("release", mapEnvironment(map[string]string{
 		config.AwaitTimeoutEnvironment: longAwaitTimeout,
 	}))
 	if err == nil || !strings.Contains(err.Error(), "must not exceed 24h0m0s") {
@@ -196,11 +196,11 @@ func TestResolveAwaitSettingsRejectsLongTimeoutWithoutUnsafeMaximum(t *testing.T
 func TestResolveAwaitSettingsRejectsMalformedUnsafeMaximum(t *testing.T) {
 	t.Parallel()
 
-	result, err := config.Parse(validLaneKeeperConfig)
+	model, _, err := config.ParseAtQualifier(validLaneKeeperConfig, "_.lane-keeper")
 	if err != nil {
-		t.Fatalf("Parse() error = %v", err)
+		t.Fatalf("ParseAtQualifier() error = %v", err)
 	}
-	_, err = result.Model.ResolveAwaitSettings("release", mapEnvironment(map[string]string{
+	_, err = model.ResolveAwaitSettings("release", mapEnvironment(map[string]string{
 		config.AllowLongAwaitMaximumEnvironment: longAwaitTimeout,
 	}))
 	if err == nil || !strings.Contains(err.Error(), "positive integer number of seconds") {

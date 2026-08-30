@@ -141,19 +141,20 @@ func mrRepository(t *testing.T) readinessRepositoryPaths {
 	runGit(t, repositoryRoot, "commit", "--allow-empty", "-m", "init")
 	configPath := filepath.Join(repositoryRoot, "lane-keeper.toml")
 	content := `
+[_.lane-keeper]
 version = 1
 
-[defaults]
+[_.lane-keeper.defaults]
 remote = "origin"
 
-[checks.ready]
+[_.lane-keeper.checks.ready]
 predicate = """succeed()"""
 
-[templates.merge-request-message]
+[_.lane-keeper.templates.merge-request-message]
 title = "` + mrTitleTemplate + `"
 body = "` + strings.ReplaceAll(mrBodyTemplate, "\n", `\n`) + `"
 
-[workflows.release]
+[_.lane-keeper.workflows.release]
 checks = ["ready"]
 target_branch = { resolve = "literal", value = "master" }
 merge_request_template = "merge-request-message"

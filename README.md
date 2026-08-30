@@ -92,3 +92,44 @@ Per-invocation environment overrides are `LANE_KEEPER_AWAIT_INTERVAL` and
 setting `LANE_KEEPER_UNSAFE_ALLOW_LONG_AWAIT_MAXIMUM` to a positive integer
 number of seconds greater than 86400. The supplied ceiling has no additional
 policy maximum, but it must fit Go's duration representation.
+
+## Explicit Config File
+
+Every `readiness`/`branch`/`mr` command accepts `--config <path>` to read a
+dedicated Lane-Keeper TOML file instead of discovering `mise.toml`. Because
+Mise never parses this file, its configuration fields live at the document
+root, without the `[_.lane-keeper]` wrapper:
+
+```toml
+version = 1
+
+[defaults]
+remote = "origin"
+
+[checks.main-ready]
+predicate = """
+succeed()
+"""
+
+[workflows.deploy]
+checks = ["main-ready"]
+target_branch = { resolve = "literal", value = "main" }
+```
+
+The two config shapes are not interchangeable: the implicit `mise.toml`
+lookup always requires the `[_.lane-keeper]` nesting, and an explicit
+`--config` file always uses the root-level shape above.
+
+## Tool Version Advisory
+
+When the repository's `mise.toml` pins a `lane-keeper` version under
+`[tools]` that differs from the running binary's version, every command
+prints a non-fatal warning to stderr and continues:
+
+```text
+lane-keeper: warning: running version 1.0.0, but repository pins 9.9.9
+```
+
+This check only applies to the implicit `mise.toml` lookup; `[tools]` is a
+Mise concept with no meaning in an explicit `--config` file. Local `dev`
+builds are never checked.

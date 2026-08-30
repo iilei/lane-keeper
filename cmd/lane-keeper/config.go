@@ -61,13 +61,13 @@ func introspectConfigFile(ctx context.Context, tomlPath string, format bool) con
 		return configIntrospectionResult{Errors: []error{fmt.Errorf("read %s: %w", tomlPath, err)}}
 	}
 
-	parseResult, err := config.Parse(string(content))
+	model, found, err := config.ParseAtQualifier(string(content), "_.lane-keeper")
 	if err != nil {
 		return configIntrospectionResult{Errors: []error{fmt.Errorf("%s: %w", tomlPath, err)}}
 	}
 	result := configIntrospectionResult{}
-	if parseResult.Found {
-		for _, validationError := range parseResult.Model.Validate() {
+	if found {
+		for _, validationError := range model.Validate() {
 			result.Errors = append(result.Errors, fmt.Errorf("%s: %w", tomlPath, validationError))
 		}
 	}

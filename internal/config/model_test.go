@@ -1,6 +1,8 @@
 package config_test
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -8,6 +10,33 @@ import (
 )
 
 const readyCheckName = "ready"
+
+// TestParseAtQualifierReadsExampleMiseTOML proves .example.mise.toml is
+// directly usable via --config with the default "_.lane-keeper" qualifier,
+// since it retains the mise.toml-embedded nesting.
+func TestParseAtQualifierReadsExampleMiseTOML(t *testing.T) {
+	t.Parallel()
+
+	repositoryRoot, err := filepath.Abs("../..")
+	if err != nil {
+		t.Fatalf("Abs() error = %v", err)
+	}
+	//nolint:gosec // fixed test-relative path, not user input.
+	content, err := os.ReadFile(filepath.Join(repositoryRoot, ".example.mise.toml"))
+	if err != nil {
+		t.Fatalf("ReadFile() error = %v", err)
+	}
+	model, found, err := config.ParseAtQualifier(string(content), "_.lane-keeper")
+	if err != nil {
+		t.Fatalf("ParseAtQualifier() error = %v", err)
+	}
+	if !found {
+		t.Fatal("ParseAtQualifier() found = false, want true")
+	}
+	if errs := model.Validate(); len(errs) > 0 {
+		t.Errorf("Validate() errors = %v, want none", errs)
+	}
+}
 
 func TestModelValidateAcceptsValidSharedSource(t *testing.T) {
 	t.Parallel()
@@ -87,20 +116,20 @@ version = 1
 [_.lane-keeper.checks.ready]
 predicate = "def broken(:"
 `
-	result, err := config.Parse(content)
+	model, found, err := config.ParseAtQualifier(content, "_.lane-keeper")
 	if err != nil {
-		t.Fatalf("Parse() error = %v", err)
-	}
-	if !result.Found {
-		t.Fatal("Parse() result.Found = false, want true")
-	}
-	var found bool
-	for _, validationErr := range result.Model.Validate() {
-		if strings.Contains(validationErr.Error(), `check "ready"`) {
-			found = true
-		}
+		t.Fatalf("ParseAtQualifier() error = %v", err)
 	}
 	if !found {
+		t.Fatal("ParseAtQualifier() found = false, want true")
+	}
+	var errFound bool
+	for _, validationErr := range model.Validate() {
+		if strings.Contains(validationErr.Error(), `check "ready"`) {
+			errFound = true
+		}
+	}
+	if !errFound {
 		t.Fatal("Validate() did not report a syntax error for a single-line basic-string predicate")
 	}
 }

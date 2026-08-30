@@ -39,12 +39,6 @@ type (
 		Workflows map[string]Workflow `toml:"workflows"`
 	}
 
-	// ParseResult distinguishes absent Lane-Keeper configuration from a parsed model.
-	ParseResult struct {
-		Model *Model
-		Found bool
-	}
-
 	// Defaults contains repository-wide workflow defaults.
 	Defaults struct {
 		Remote              string            `toml:"remote"`
@@ -108,50 +102,48 @@ type (
 	}
 )
 
-// Parse reads only the [_.lane-keeper] subtree and ignores unrelated Mise configuration.
-func Parse(content string) (ParseResult, error) {
+// ParseAtQualifier decodes the Lane-Keeper Model from content at the given
+// dot-separated table path, such as "_.lane-keeper". An empty qualifier
+// decodes configuration fields from the document root instead. found is
+// false when a non-empty qualifier's table path does not exist in content;
+// a root-level qualifier ("") is always attempted and only fails via err.
+func ParseAtQualifier(content, qualifier string) (Model, bool, error) {
+	if qualifier == "" {
+		var model Model
+		decoder := toml.NewDecoder(strings.NewReader(content))
+		decoder.DisallowUnknownFields()
+		if err := decoder.Decode(&model); err != nil {
+			return Model{}, false, fmt.Errorf("decode config: %w", err)
+		}
+		return model, true, nil
+	}
+
 	var document map[string]any
 	if err := toml.Unmarshal([]byte(content), &document); err != nil {
-		return ParseResult{}, fmt.Errorf("toml parse error: %w", err)
+		return Model{}, false, fmt.Errorf("toml parse error: %w", err)
 	}
 
-	metadata, ok := document["_"].(map[string]any)
-	if !ok {
-		return ParseResult{}, nil
-	}
-	laneKeeper, ok := metadata["lane-keeper"].(map[string]any)
-	if !ok {
-		return ParseResult{}, nil
+	table := document
+	for key := range strings.SplitSeq(qualifier, ".") {
+		next, ok := table[key].(map[string]any)
+		if !ok {
+			return Model{}, false, nil
+		}
+		table = next
 	}
 
-	subtree, err := toml.Marshal(laneKeeper)
+	subtree, err := toml.Marshal(table)
 	if err != nil {
-		return ParseResult{}, fmt.Errorf("encode [_.lane-keeper]: %w", err)
+		return Model{}, false, fmt.Errorf("encode [%s]: %w", qualifier, err)
 	}
 
 	var model Model
 	decoder := toml.NewDecoder(strings.NewReader(string(subtree)))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(&model); err != nil {
-		return ParseResult{}, fmt.Errorf("decode [_.lane-keeper]: %w", err)
+		return Model{}, false, fmt.Errorf("decode [%s]: %w", qualifier, err)
 	}
-	return ParseResult{Model: &model, Found: true}, nil
-}
-
-// ParseExplicit reads a dedicated Lane-Keeper TOML file, where configuration
-// fields (version, defaults, checks, templates, workflows) live at the
-// document root rather than beneath [_.lane-keeper]. The [_] nesting exists
-// only so Mise ignores Lane-Keeper configuration embedded in mise.toml; a
-// file passed explicitly via --config is never read by Mise, so it carries
-// no such requirement.
-func ParseExplicit(content string) (Model, error) {
-	var model Model
-	decoder := toml.NewDecoder(strings.NewReader(content))
-	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(&model); err != nil {
-		return Model{}, fmt.Errorf("decode config: %w", err)
-	}
-	return model, nil
+	return model, true, nil
 }
 
 // PinnedToolVersion reads the repository-pinned lane-keeper version from a

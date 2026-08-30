@@ -21,6 +21,12 @@ import (
 const (
 	checkMode = "check"
 	awaitMode = "await"
+
+	// defaultConfigQualifier is the dot-separated table path Lane-Keeper
+	// configuration is nested under inside a repository's mise.toml, so Mise
+	// ignores it as project metadata. See ParseAtQualifier for how an empty
+	// qualifier instead reads configuration fields from the document root.
+	defaultConfigQualifier = "_.lane-keeper"
 )
 
 func readiness(args []string) int {
@@ -46,6 +52,11 @@ func runReadiness(
 	flags.SetOutput(stderr)
 	workflowName := flags.String("workflow", "", "Workflow to evaluate")
 	configPath := flags.String("config", "", "Path to a Mise TOML file")
+	cfgQualifier := flags.String(
+		"cfg-qualifier",
+		defaultConfigQualifier,
+		"Dot-separated table path containing Lane-Keeper config (empty for document root)",
+	)
 	environment := flags.String("environment", "", "Optional environment input")
 	ticket := flags.String("ticket", "", "Optional ticket input")
 	outputFormat := flags.String("output", output.FormatText, "Output format: text or json")
@@ -62,7 +73,15 @@ func runReadiness(
 		return usageExitCode
 	}
 
-	resolved, inspector, err := prepareReadiness(ctx, *workflowName, *configPath, stderr, getwd, lookupEnv)
+	resolved, inspector, err := prepareReadiness(
+		ctx,
+		*workflowName,
+		*configPath,
+		*cfgQualifier,
+		stderr,
+		getwd,
+		lookupEnv,
+	)
 	if err != nil {
 		_, _ = fmt.Fprintf(stderr, "readiness: error: %v\n", err)
 		return usageExitCode
@@ -134,7 +153,7 @@ func awaitWorkflow(
 
 func prepareReadiness(
 	ctx context.Context,
-	workflowName, configPath string,
+	workflowName, configPath, cfgQualifier string,
 	stderr io.Writer,
 	getwd func() (string, error),
 	lookupEnv func(string) (string, bool),
@@ -147,8 +166,7 @@ func prepareReadiness(
 	if err != nil {
 		return workflow.Resolved{}, nil, err
 	}
-	explicitConfig := configPath != ""
-	if !explicitConfig {
+	if configPath == "" {
 		configPath = filepath.Join(repositoryRoot, "mise.toml")
 	}
 	content, err := os.ReadFile(configPath) //nolint:gosec // caller explicitly selects repository configuration.
@@ -156,30 +174,20 @@ func prepareReadiness(
 		return workflow.Resolved{}, nil, fmt.Errorf("read config %q: %w", configPath, err)
 	}
 
-	var model *config.Model
-	if explicitConfig {
-		parsedModel, err := config.ParseExplicit(string(content))
-		if err != nil {
-			return workflow.Resolved{}, nil, fmt.Errorf("config %q: %w", configPath, err)
-		}
-		model = &parsedModel
-	} else {
-		// The [tools] version pin is a Mise concept; only check it against the
-		// implicit repository mise.toml, never against an explicit --config file.
-		warnOnVersionMismatch(stderr, string(content))
-		parsed, err := config.Parse(string(content))
-		if err != nil {
-			return workflow.Resolved{}, nil, err
-		}
-		if !parsed.Found {
-			return workflow.Resolved{}, nil, fmt.Errorf("config %q does not contain [_.lane-keeper]", configPath)
-		}
-		model = parsed.Model
+	// The [tools] version pin is a Mise concept; it is a no-op when absent,
+	// so this is safe to attempt regardless of --config/--cfg-qualifier.
+	warnOnVersionMismatch(stderr, string(content))
+	model, found, err := config.ParseAtQualifier(string(content), cfgQualifier)
+	if err != nil {
+		return workflow.Resolved{}, nil, fmt.Errorf("config %q: %w", configPath, err)
+	}
+	if !found {
+		return workflow.Resolved{}, nil, fmt.Errorf("config %q does not contain [%s]", configPath, cfgQualifier)
 	}
 	inspector := gitinspect.NewInspector(repositoryRoot)
 	resolved, err := workflow.Resolve(
 		ctx,
-		model,
+		&model,
 		workflowName,
 		lookupEnv,
 		workflow.GitRemoteHead(repositoryRoot),

@@ -12,13 +12,15 @@ import (
 )
 
 const (
-	awaitCommand    = "await"
-	checkCommand    = "check"
-	configFlag      = "--config"
-	jsonFormat      = "json"
-	outputFlag      = "--output"
-	releaseWorkflow = "release"
-	workflowFlag    = "--workflow"
+	awaitCommand     = "await"
+	cfgQualifierFlag = "--cfg-qualifier"
+	checkCommand     = "check"
+	configFlag       = "--config"
+	jsonFormat       = "json"
+	outputFlag       = "--output"
+	readyTextOutput  = "readiness: ready\nworkflow: release\ntarget: master\n"
+	releaseWorkflow  = "release"
+	workflowFlag     = "--workflow"
 )
 
 type readinessRepositoryPaths struct {
@@ -65,8 +67,72 @@ func TestRunReadinessCheckReportsReady(t *testing.T) {
 	if exitCode != 0 {
 		t.Fatalf("runReadiness() exit code = %d, want 0; stderr = %q", exitCode, stderr.String())
 	}
-	if got, want := stdout.String(), "readiness: ready\nworkflow: release\ntarget: master\n"; got != want {
+	if got, want := stdout.String(), readyTextOutput; got != want {
 		t.Errorf("stdout = %q, want %q", got, want)
+	}
+}
+
+func TestRunReadinessCheckReadsRootLevelConfigWithEmptyQualifier(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git is not available")
+	}
+	repositoryRoot := t.TempDir()
+	runGit(t, repositoryRoot, "init", "--initial-branch=master")
+	configPath := filepath.Join(repositoryRoot, "lane-keeper.toml")
+	content := `
+version = 1
+
+[defaults]
+remote = "origin"
+
+[checks.ready]
+predicate = """succeed()"""
+
+[workflows.release]
+checks = ["ready"]
+target_branch = { resolve = "literal", value = "master" }
+`
+	if err := os.WriteFile(configPath, []byte(content), 0o600); err != nil {
+		t.Fatalf("WriteFile(): %v", err)
+	}
+
+	var stdout, stderr bytes.Buffer
+	exitCode := runReadiness(
+		context.Background(),
+		[]string{checkCommand, workflowFlag, releaseWorkflow, configFlag, configPath, cfgQualifierFlag, ""},
+		&stdout,
+		&stderr,
+		func() (string, error) { return repositoryRoot, nil },
+		noEnvironment,
+	)
+	if exitCode != 0 {
+		t.Fatalf("runReadiness() exit code = %d, want 0; stderr = %q", exitCode, stderr.String())
+	}
+	if got, want := stdout.String(), readyTextOutput; got != want {
+		t.Errorf("stdout = %q, want %q", got, want)
+	}
+}
+
+func TestRunReadinessCheckRejectsMissingQualifierTable(t *testing.T) {
+	paths := readinessRepository(t, "succeed()")
+	var stdout, stderr bytes.Buffer
+
+	exitCode := runReadiness(
+		context.Background(),
+		[]string{
+			checkCommand, workflowFlag, releaseWorkflow, configFlag, paths.configPath,
+			cfgQualifierFlag, "some.other.path",
+		},
+		&stdout,
+		&stderr,
+		func() (string, error) { return paths.repositoryRoot, nil },
+		noEnvironment,
+	)
+	if exitCode != usageExitCode {
+		t.Fatalf("runReadiness() exit code = %d, want %d; stderr = %q", exitCode, usageExitCode, stderr.String())
+	}
+	if !strings.Contains(stderr.String(), "does not contain [some.other.path]") {
+		t.Errorf("stderr = %q, want to contain missing-qualifier error", stderr.String())
 	}
 }
 
@@ -359,19 +425,20 @@ func readinessRepositoryWithAwait(t *testing.T, predicate, interval, timeout str
 	runGit(t, repositoryRoot, "commit", "--allow-empty", "-m", "init")
 	configPath := filepath.Join(repositoryRoot, "lane-keeper.toml")
 	content := `
+[_.lane-keeper]
 version = 1
 
-[defaults]
+[_.lane-keeper.defaults]
 remote = "origin"
 
-[checks.ready]
+[_.lane-keeper.checks.ready]
 predicate = """` + predicate + `"""
 
-[workflows.release]
+[_.lane-keeper.workflows.release]
 checks = ["ready"]
 target_branch = { resolve = "literal", value = "master" }
 
-[workflows.release.await]
+[_.lane-keeper.workflows.release.await]
 interval = "` + interval + `"
 timeout = "` + timeout + `"
 `
@@ -424,15 +491,16 @@ func readinessRepository(t *testing.T, predicate string) readinessRepositoryPath
 	runGit(t, repositoryRoot, "init", "--initial-branch=master")
 	configPath := filepath.Join(repositoryRoot, "lane-keeper.toml")
 	content := `
+[_.lane-keeper]
 version = 1
 
-[defaults]
+[_.lane-keeper.defaults]
 remote = "origin"
 
-[checks.ready]
+[_.lane-keeper.checks.ready]
 predicate = """` + predicate + `"""
 
-[workflows.release]
+[_.lane-keeper.workflows.release]
 checks = ["ready"]
 target_branch = { resolve = "literal", value = "master" }
 `

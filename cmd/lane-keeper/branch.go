@@ -32,6 +32,11 @@ func runBranch(
 	flags.SetOutput(stderr)
 	workflowName := flags.String("workflow", "", "Workflow to evaluate")
 	configPath := flags.String("config", "", "Path to a Mise TOML file")
+	cfgQualifier := flags.String(
+		"cfg-qualifier",
+		defaultConfigQualifier,
+		"Dot-separated table path containing Lane-Keeper config (empty for document root)",
+	)
 	environment := flags.String("environment", "", "Optional environment input")
 	ticket := flags.String("ticket", "", "Optional ticket input")
 	renderVersion := flags.String("version", "", "Optional version input")
@@ -49,7 +54,15 @@ func runBranch(
 		return usageExitCode
 	}
 
-	resolved, inspector, err := prepareReadiness(ctx, *workflowName, *configPath, stderr, getwd, lookupEnv)
+	resolved, inspector, err := prepareReadiness(
+		ctx,
+		*workflowName,
+		*configPath,
+		*cfgQualifier,
+		stderr,
+		getwd,
+		lookupEnv,
+	)
 	if err != nil {
 		_, _ = fmt.Fprintf(stderr, "branch: error: %v\n", err)
 		return usageExitCode
