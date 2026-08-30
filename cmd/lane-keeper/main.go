@@ -28,8 +28,8 @@ func main() {
 	case "config-check", "config-introspection":
 		os.Exit(configCheck(args))
 
-	case "preflight":
-		fprintln(os.Stderr, "preflight: not yet implemented")
+	case "readiness":
+		fprintln(os.Stderr, "readiness: not yet implemented")
 		os.Exit(usageExitCode)
 
 	case "branch":

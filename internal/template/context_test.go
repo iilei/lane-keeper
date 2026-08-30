@@ -2,6 +2,7 @@ package template_test
 
 import (
 	"testing"
+	"time"
 
 	"github.com/iilei/lane-keeper/internal/template"
 )
@@ -17,14 +18,13 @@ const (
 
 func TestContextValuesUseTemplateFieldNames(t *testing.T) {
 	context := template.Context{
-		Ticket:       ticket,
-		Environment:  environment,
-		Version:      version,
-		SHA:          sha,
-		ShortSHA:     shortSHA,
-		TargetBranch: targetBranch,
-		YYMMDD:       "260830",
-		HHmm:         "0610",
+		Ticket:           ticket,
+		Environment:      environment,
+		Version:          version,
+		SHA:              sha,
+		ShortSHA:         shortSHA,
+		TargetBranch:     targetBranch,
+		CommitAuthorDate: time.Date(2026, time.August, 30, 6, 10, 0, 0, time.UTC),
 	}
 
 	values := context.Values()
@@ -36,8 +36,6 @@ func TestContextValuesUseTemplateFieldNames(t *testing.T) {
 		"sha":          sha,
 		"shortSha":     shortSHA,
 		"targetBranch": targetBranch,
-		"yyMMdd":       "260830",
-		"HHmm":         "0610",
 	}
 	for field, expected := range want {
 		actual, ok := values[field].(string)

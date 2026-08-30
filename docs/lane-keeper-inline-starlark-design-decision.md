@@ -3,7 +3,8 @@
 - **Status:** Proposed
 - **Date:** 2026-08-30
 - **Applies to:** `lane-keeper`
-- **Related ADR:** *Shared Preflight and Idempotent Merge Request Creation Assistance via `mise`*
+- **Originating ADR:** *Shared Preflight and Idempotent Merge Request Creation Assistance via `mise`*
+- **Scope note:** the current Lane-Keeper design is read-only and does not implement the ADR's mutation operations.
 - **Primary design question:**
   > What makes the consuming repository easiest to understand and review?
 
@@ -15,7 +16,7 @@
 - by automation and LLM-based agents;
 - in GitLab CI.
 
-The ADR requires one implementation of the readiness predicate, with CI evaluating it exactly once and local waiting delegating to the same predicate. It also requires the preflight logic to remain read-only against the leading target branch.
+The ADR requires one implementation of the readiness predicate, with CI evaluating it exactly once and local awaiting delegating to the same predicate. It also requires readiness evaluation to remain read-only against the leading target branch.
 
 Two approaches were considered for expressing repository policy:
 
@@ -31,6 +32,14 @@ The goal is therefore to retain the readability advantage of Starlark while maki
 ## Decision
 
 `lane-keeper` will support **inline Starlark predicates only**.
+
+### Current implementation status
+
+The current `config-introspection` command extracts ordinary triple-quoted
+predicate values, parses them with Canonical Starlark without execution, and
+can format them through external Buildifier. The evaluator, resource budgets,
+host values, Git inspection functions, and readiness commands described below
+remain design requirements rather than implemented behavior.
 
 The Starlark source MUST be obtained directly from the repository-owned
 `mise.toml`, from a configured field under the `[_.lane-keeper]` metadata
@@ -175,7 +184,8 @@ for file in diff.files:
         fail("non-benign change: " + file)
 ```
 
-The `diff.files` property (list of changed file paths) is deferred until required by repository policy.
+The `diff.files` property is required because the initial repository policy
+must classify changed paths as benign or environment-determining.
 
 The host API SHOULD grow only when a concrete repository policy requires another primitive.
 
@@ -253,8 +263,7 @@ It MUST NOT know whether it is being consumed by:
 
 ```text
 check
-wait
-watch
+await
 CI
 human
 LLM
@@ -269,7 +278,7 @@ evaluate once
 return result
 ```
 
-### Wait
+### Await
 
 ```text
 evaluate
@@ -278,25 +287,19 @@ if not ready:
     evaluate again
 ```
 
-### Watch
-
-```text
-evaluate repeatedly in detached execution
-detect relevant state transition
-notify
-```
-
-All three use the exact same ordered predicate set.
+Both operations use the exact same ordered predicate set.
 
 This preserves the ADR requirement that local and CI behavior must not drift.
 
-## Mutation Boundary
+## Read-only Boundary
 
-Preflight Starlark is strictly read-only.
+Readiness Starlark is strictly read-only.
 
-Branch creation, merge-request creation, waiting, notifications, and GitLab API interactions occur only after policy evaluation and are implemented by `lane-keeper`.
+Lane-Keeper may await readiness and render deterministic branch names or
+merge-request messages. It does not create branches, push refs, create merge
+requests, or invoke remote mutation APIs.
 
-This also preserves the ADR's invariant that preflight inspects the leading target branch without modifying the tool-managed contribution branch.
+This preserves the invariant that readiness inspects repository state without modifying it.
 
 ## Resource Limits
 
@@ -355,7 +358,7 @@ The main reason for choosing inline Starlark rather than a custom DSL is reposit
 A reviewer should be able to inspect:
 
 ```toml
-[lane-keeper.checks.main-ready]
+[_.lane-keeper.checks.main-ready]
 predicate = """
 ...
 """
@@ -451,7 +454,7 @@ would be simple to implement but provides a much broader execution capability an
 
 It also introduces platform, quoting, runtime, and process-environment concerns.
 
-Therefore arbitrary command execution is not part of the preflight predicate model.
+Therefore arbitrary command execution is not part of the readiness predicate model.
 
 ## Consequences
 
@@ -476,7 +479,7 @@ Therefore arbitrary command execution is not part of the preflight predicate mod
 
 ## Invariants
 
-1. Predicate source comes only from `[lane-keeper]` configuration in repository `mise.toml`.
+1. Predicate source comes only from `[_.lane-keeper]` configuration in repository `mise.toml`.
 2. Predicates are inline Starlark strings.
 3. External policy-source schemes are unsupported.
 4. `load(...)` is unavailable.
@@ -485,7 +488,7 @@ Therefore arbitrary command execution is not part of the preflight predicate mod
 7. No arbitrary filesystem access is exposed.
 8. No Git or GitLab mutation is exposed to predicates.
 9. Predicates cannot sleep, poll, watch, or notify.
-10. `check`, `wait`, and `watch` evaluate the same ordered predicate set.
+10. `readiness check` and `readiness await` evaluate the same ordered predicate set.
 11. CI evaluates the predicate exactly once.
 12. Interpreter errors fail closed.
 13. Predicate execution is resource-bounded.
@@ -495,10 +498,12 @@ Therefore arbitrary command execution is not part of the preflight predicate mod
 ## Example Complete Policy
 
 ```toml
-[lane-keeper]
+[_]
+
+[_.lane-keeper]
 version = 1
 
-[lane-keeper.checks.main-ready]
+[_.lane-keeper.checks.main-ready]
 description = "Determine whether the target branch is ready for the deployment contribution"
 
 predicate = """
@@ -506,22 +511,19 @@ target = workflow.target_branch
 baseline = git.latest_tag(target)
 
 if baseline == None:
-    fail("no baseline tag found on " + target)
+    fail("no baseline tag found on %s" % target)
 
 changes = git.diff(baseline, target)
 
 if changes.is_empty:
-    fail("no relevant changes since " + baseline)
+    succeed()
 
-pass({
-    "baseline": baseline,
-    "target": target,
-})
+succeed()
 """
 
-[lane-keeper.workflows.deploy]
+[_.lane-keeper.workflows.deploy]
 checks = ["main-ready"]
-target_branch = "main"
+target_branch = { resolve = "literal", value = "main" }
 ```
 
 The intended reviewer experience is:

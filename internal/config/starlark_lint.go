@@ -17,7 +17,7 @@ import (
 type (
 	// Predicate represents a lane-keeper check predicate in TOML.
 	Predicate struct {
-		CheckName string // e.g., "target-has-baseline-and-benign-changes"
+		CheckName string // e.g., "benign-changes-only-on-target-since-baseline"
 		Code      string // The Starlark source code
 		StartPos  int    // Position of entire predicate = """ """ block
 		EndPos    int

@@ -154,7 +154,7 @@ release:
   header: |
     ## Lane-Keeper {{ .Tag }} ({{ .Date }})
 
-    Configurable repository preflight checks and workflow helpers.
+    Configurable repository readiness checks and read-only workflow helpers.
   footer: |
     **Full Changelog**: https://github.com/iilei/lane-keeper/compare/{{ .PreviousTag }}...{{ .Tag }}
 

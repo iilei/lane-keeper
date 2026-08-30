@@ -4,7 +4,8 @@
 - **Audience:** Human maintainers and coding agents
 - **Primary design question:**
   > What makes the consuming repository easiest to understand and review?
-- **Primary source:** ADR *Shared Preflight and Idempotent Merge Request Creation Assistance via `mise`*
+- **Originating ADR:** *Shared Preflight and Idempotent Merge Request Creation Assistance via `mise`*
+- **Scope note:** this specification supersedes the ADR's mutation scope; Lane-Keeper is read-only.
 
 ---
 
@@ -26,7 +27,28 @@ The first adopting repository has a complex multi-environment GitLab CI setup. A
 
 `lane-keeper` provides a local and automation-friendly way to evaluate the same precondition before filing a merge request, without adding another dynamic CI layer.
 
-The ADR establishes that local and CI behavior must share one readiness implementation, that CI checks exactly once, and that local waiting delegates to the same predicate.
+The design establishes that local and CI behavior must share one readiness implementation, that CI checks exactly once, and that local awaiting delegates to the same predicate.
+
+### 1.1 Current implementation boundary
+
+This document specifies the target design unless a section explicitly says
+otherwise. The current executable implements `version` and
+`config-introspection`; `readiness`, `branch`, and `mr` remain command stubs.
+
+Current config introspection can:
+
+- parse TOML;
+- locate ordinary triple-quoted predicates beneath
+  `[_.lane-keeper.checks.<name>]`;
+- parse extracted predicates with Canonical Starlark without executing them;
+- format extracted predicates through an external `buildifier` executable;
+- validate and preview custom template date layouts.
+
+It does not yet perform complete configuration-schema validation, resolve
+workflows or Git state, execute Starlark, expose the planned host API, evaluate
+readiness, or render branch and merge-request templates. Predicate extraction
+is currently limited to the documented ordinary triple-quoted representation;
+a TOML-structure-driven extractor remains planned.
 
 ---
 
@@ -60,8 +82,7 @@ It can be consumed as:
 
 ```text
 check   evaluate once
-wait    evaluate repeatedly until ready
-watch   evaluate asynchronously and notify on state transition
+await   evaluate repeatedly until ready
 ```
 
 The predicate itself never sleeps, retries, mutates Git state, creates branches, creates merge requests, or sends notifications.
@@ -149,7 +170,10 @@ The ADR requires:
 - Windows, macOS, and Linux support;
 - platform-specific artifacts;
 - SHA-256 checksums;
-- no additional runtime dependency for users.
+- no additional runtime dependency for core commands or `--lint`.
+
+`config-introspection --fmt` deliberately invokes external Buildifier. The
+published formatting hook installs it in the hook's isolated environment.
 
 ### 4.1 Preferred installation
 
@@ -245,33 +269,32 @@ version = 1
 
 [_.lane-keeper.defaults]
 remote = "origin"
-wait_interval = "30s"
+await_interval = "30s"
+
+[_.lane-keeper.defaults.template_date_formats]
+releaseStamp = "2006.01.02"
 
 [_.lane-keeper.checks.main-ready]
 description = "Whether the target branch is currently ready for this contribution"
 
 predicate = """
-starlark:
 target = workflow.target_branch
 baseline = git.latest_tag(target)
 
 if baseline == None:
-    fail("no baseline tag found on " + target)
+    fail("no baseline tag found on %s" % target)
 
 diff = git.diff(baseline, target)
 
 if diff.is_empty:
-    fail("no relevant changes since " + baseline)
+    succeed()
 
-pass({
-    "baseline": baseline,
-    "target": target,
-})
+succeed()
 """
 
 [_.lane-keeper.templates.contribution-branch]
 template = """
-{{ if .ticket }}{{ .ticket }}-{{ end }}{{ .yyMMdd }}-{{ .environment }}-{{ .shortSha }}
+{{ if .ticket }}{{ .ticket }}-{{ end }}{{ .commitAuthorDate | date "yyMMdd" }}-{{ .environment }}-{{ .shortSha }}
 """
 
 [_.lane-keeper.templates.merge-request-message]
@@ -285,40 +308,24 @@ Target branch: {{ .targetBranch }}
 description = "Prepare a deployment-oriented contribution"
 checks = ["main-ready"]
 remote = "origin"
-target_branch_resolver = "git-remote-head"
+target_branch = { resolve = "git-remote-head" }
 branch_template = "contribution-branch"
 merge_request_template = "merge-request-message"
 
-[_.lane-keeper.workflows.deploy.wait]
+[_.lane-keeper.workflows.deploy.await]
 interval = "30s"
 
-[_.lane-keeper.workflows.deploy.watch]
-notify = true
-identity = [
-  "repository",
-  "workflow",
-  "source_sha",
-  "environment",
-]
-notify_on = [
-  "not_ready->ready",
-  "not_ready->error",
-]
+[tasks."check:readiness-main"]
+run = "lane-keeper readiness check --workflow deploy"
 
-[tasks."check:preflight-main"]
-run = "lane-keeper preflight check deploy"
-
-[tasks."wait:preflight-main"]
-run = "lane-keeper preflight wait deploy"
+[tasks."await:readiness-main"]
+run = "lane-keeper readiness await --workflow deploy"
 
 [tasks."tmpl:branch-name"]
-run = "lane-keeper branch name deploy"
+run = "lane-keeper branch name --workflow deploy"
 
 [tasks."tmpl:merge-req-message"]
-run = "lane-keeper mr render deploy"
-
-[tasks."git:create-mr-when-ready"]
-run = "lane-keeper mr create-when-ready deploy"
+run = "lane-keeper mr render --workflow deploy"
 ```
 
 ---
@@ -353,20 +360,10 @@ A developer reviewing the consuming repository should be able to understand the 
 
 ### 7.2 Predicate field type
 
-`predicate` must always be a TOML string.
-
-Supported source forms:
-
-```text
-starlark:<inline source>
-starlark+file:<path>
-```
-
-Inline example:
+`predicate` must be inline Starlark in an ordinary TOML triple-quoted string:
 
 ```toml
 predicate = """
-starlark:
 target = workflow.target_branch
 
 if git.latest_tag(target) == None:
@@ -376,13 +373,8 @@ succeed()
 """
 ```
 
-File-backed example:
-
-```toml
-predicate = "starlark+file:.lane-keep/main-ready.star"
-```
-
-This intentionally borrows the useful idea of a source-locator scheme while keeping the TOML type stable.
+Language prefixes, file references, URLs, stdin, and other external predicate
+sources are unsupported.
 
 ### 7.3 No arbitrary OS access
 
@@ -503,16 +495,32 @@ exit code (1–250)
 
 ## 9. Command Surface
 
-### 9.1 Check
+### 9.0 Config introspection (implemented)
 
 ```bash
-lane-keeper preflight check <workflow>
+lane-keeper config-introspection --lint <toml-files...>
+lane-keeper config-introspection --fmt <toml-files...>
+```
+
+`--lint` validates TOML, parses extracted inline predicates as Starlark without
+executing them, validates custom date layouts, and prints deterministic date
+layout previews. It does not check Buildifier formatting.
+
+`--fmt` performs the same validation, invokes the external `buildifier`
+executable from `PATH`, replaces formatted predicate bodies in place, and
+validates the resulting TOML. The flags are mutually exclusive. `config-check`
+is currently accepted as a compatibility alias for `config-introspection`.
+
+### 9.1 Check readiness
+
+```bash
+lane-keeper readiness check --workflow <workflow>
 ```
 
 Example:
 
 ```bash
-lane-keeper preflight check deploy \
+lane-keeper readiness check --workflow deploy \
   --environment staging \
   --ticket ABC-123
 ```
@@ -530,10 +538,10 @@ return exit status
 
 This is the CI-safe operation.
 
-### 9.2 Wait
+### 9.2 Await readiness
 
 ```bash
-lane-keeper preflight wait <workflow>
+lane-keeper readiness await --workflow <workflow>
 ```
 
 Semantics:
@@ -546,46 +554,14 @@ if not ready:
 stop when ready or interrupted
 ```
 
-`wait` must not implement a second version of the aggregate preflight.
+`await` must not implement a second version of aggregate readiness evaluation.
 
-This preserves the ADR invariant that waiting delegates to the canonical readiness logic.
+This preserves the invariant that awaiting delegates to the canonical readiness logic.
 
-### 9.3 Watch
-
-```bash
-lane-keeper preflight watch <workflow> --notify
-```
-
-Semantics:
-
-```text
-resolve immutable invocation context
-calculate watch identity
-reuse equivalent active watch if present
-otherwise dispatch background watcher
-return promptly
-
-background watcher:
-  evaluate same ordered checks
-    sleep between attempts
-    detect state transitions
-    notify on configured transition
-```
-
-The first notification transition of interest is:
-
-```text
-NOT_READY -> READY
-```
-
-`watch` is intended as an optional bridge for IDE-first developers.
-
-It must not require an IDE plugin.
-
-### 9.4 Branch name
+### 9.3 Branch name
 
 ```bash
-lane-keeper branch name <workflow>
+lane-keeper branch name --workflow <workflow>
 ```
 
 This is a pure operation.
@@ -602,26 +578,19 @@ print canonical branch name
 
 No remote mutation.
 
-### 9.5 Create MR when ready
+### 9.4 Merge-request message
 
 ```bash
-lane-keeper mr create-when-ready <workflow>
+lane-keeper mr render --workflow <workflow>
 ```
 
-This is the high-level orchestration command.
-
-Conceptual flow:
+This is a pure rendering operation. It must:
 
 ```text
-freeze source SHA
-wait for preflight
-render canonical branch name
-ensure remote branch
-ensure matching MR
-return MR URL
+resolve workflow context
+render title and body as separate fields
+print the rendered message
 ```
-
-The ADR requires the source SHA to be frozen at invocation start so a later change to `HEAD` does not alter the contribution identity while waiting.
 
 ---
 
@@ -633,15 +602,14 @@ Reasonable defaults:
 
 ```text
 remote                 origin
-wait interval          30s
-notification backend   system
+await interval         30s
 branch template        [ticket-]date-environment-shortSha
 ```
 
 Default branch template:
 
 ```text
-{{ if .ticket }}{{ .ticket }}-{{ end }}{{ .yyMMdd }}-{{ .environment }}-{{ .shortSha }}
+{{ if .ticket }}{{ .ticket }}-{{ end }}{{ .commitAuthorDate | date "yyMMdd" }}-{{ .environment }}-{{ .shortSha }}
 ```
 
 The ADR already establishes that the branch identity should be deterministic and should include source SHA by default.
@@ -668,21 +636,40 @@ At minimum:
 {
   "ticket": "ABC-123",
   "environment": "staging",
+  "version": "1.42.0",
   "sha": "a83d0219...",
   "shortSha": "a83d021",
-  "yyMMdd": "260829",
-  "HHmm": "0610"
+  "targetBranch": "main",
+  "commitAuthorDate": "timestamp"
 }
 ```
 
-The timestamp must derive from the immutable source commit's committer timestamp, not wall-clock time.
+`commitAuthorDate` must derive from the immutable source commit's author date,
+not wall-clock time.
 
 This ensures retries against the same source commit produce the same branch identity.
 
 TOML configuration keys and Starlark host properties use `snake_case`.
 Template context properties use lower camel case, such as `shortSha` and
-`targetBranch`. `yyMMdd` and `HHmm` are date/time format tokens and retain their
-conventional names.
+`targetBranch`.
+
+Templates use Go `text/template`. The `date` function accepts the built-in
+named layouts `yyMMdd`, `yyyyMMdd`, `HHmm`, `isoDate`, and `rfc3339`:
+
+```gotemplate
+{{ .commitAuthorDate | date "yyMMdd" }}
+```
+
+Advanced users may add named Go reference-time layouts:
+
+```toml
+[_.lane-keeper.defaults.template_date_formats]
+releaseStamp = "2006.01.02"
+```
+
+Built-in names cannot be overridden and empty custom layouts are invalid.
+Config introspection renders each custom layout with Go's reference time as an
+informational preview; it does not infer whether the rendered content is useful.
 
 ### 11.1 Template precedence
 
@@ -694,7 +681,7 @@ CLI override
 
 ### 11.2 Validation
 
-Before remote mutation, validate the rendered branch name as a valid Git ref.
+Validate the rendered branch name as a valid Git ref before printing it.
 
 ### 11.3 Merge-request message templates
 
@@ -712,12 +699,12 @@ Target branch: {{ .targetBranch }}
 """
 ```
 
-`lane-keeper mr render <workflow>` is a pure operation that renders and prints
-the title and body before any remote mutation. Repositories may expose it as:
+`lane-keeper mr render --workflow <workflow>` is a pure operation that renders
+and prints the title and body. Repositories may expose it as:
 
 ```toml
 [tasks."tmpl:merge-req-message"]
-run = "lane-keeper mr render deploy"
+run = "lane-keeper mr render --workflow deploy"
 ```
 
 The title and body MUST remain separate structured fields. Lane-Keeper MUST NOT
@@ -727,126 +714,41 @@ delimiter.
 
 ---
 
-## 12. Branch Idempotency
+## 12. Read-only operation boundary
 
-Branch creation must use PUT-like semantics even if the GitLab API itself is POST-based.
-
-Given:
-
-```text
-branch name
-source SHA
-```
-
-behavior must be:
-
-```text
-branch absent
-    -> create branch at source SHA
-    -> success
-
-branch exists at expected SHA
-    -> reuse
-    -> success
-
-branch exists at different SHA
-    -> explicit conflict
-    -> failure
-```
-
-The tool must never silently move an existing branch.
-
-This behavior is required by the ADR.
+Lane-Keeper inspects repository state and renders deterministic artifacts. It
+MUST NOT create or update branches, push refs, create merge requests, or call a
+remote mutation API. The invoking developer, shell, CI job, or dedicated VCS
+tool owns those actions.
 
 ---
 
-## 13. Merge Request Idempotency
+## 14. Workflow Evaluation
 
-MR creation must also be retry-safe.
+### 14.1 Target branch resolution
 
-Behavior:
+Each workflow MUST declare a `target_branch` inline table with a `resolve` field.
+`resolve` is a closed Lane-Keeper API: configuration MUST NOT contain arbitrary
+shell commands or scripts.
 
-```text
-matching open MR absent
-    -> create MR
-
-matching open MR exists
-    -> reuse MR
-    -> return existing URL
+```toml
+target_branch = { resolve = "literal", value = "master" }
+target_branch = { resolve = "git-remote-head" }
 ```
 
-Repeated invocation by:
-
-```text
-human
-LLM
-retrying shell
-automation
-```
-
-must not create duplicate branches or duplicate MRs.
-
----
-
-## 14. Watch Idempotency
-
-Repeated IDE actions should not create duplicate background pollers.
-
-Default logical watch identity combines:
-
-```text
-repository root path
-workflow name
-source commit SHA
-environment (nullable)
-```
-
-When `lane-keeper preflight watch <workflow>` is invoked:
-
-```text
-If equivalent watch already running:
-    report existing process
-else:
-    launch background watcher
-```
-
-The background watcher evaluates the same predicate repeatedly, sleeping between attempts, and exits when:
-
-```text
-user interrupts (SIGTERM, SIGINT)
-source SHA changes
-predicate error
-```
-
-Each watcher is independent and repository-local. Process lifecycle is managed by the invoking terminal or IDE, not by a global daemon.
-
-### 6.1 Target branch resolution
-
-Each workflow MUST declare exactly one target-branch field:
-
-```text
-target_branch_literal
-target_branch_resolver
-```
-
-`target_branch_literal` contains a valid literal branch name.
-
-`target_branch_resolver` selects a Lane-Keeper-defined resolver. Initially,
-`git-remote-head` resolves the configured remote's symbolic `HEAD` reference,
-such as `refs/remotes/origin/HEAD`, then uses its branch component. This is the
-remote's default branch: the leading branch proposed for a new merge request.
-Resolution failure is a configuration/repository error; Lane-Keeper MUST NOT
-silently substitute `main` or `master`.
-
-Configuring both fields, or neither field, is invalid. Resolver names are a
-closed Lane-Keeper API: configuration MUST NOT contain arbitrary shell commands
-or scripts.
+`resolve = "literal"` requires a non-empty `value` containing a valid branch
+name. `resolve = "git-remote-head"` forbids `value` and resolves the configured
+remote's symbolic `HEAD` reference, such as `refs/remotes/origin/HEAD`, then
+uses its branch component. This is the remote's default branch: the leading
+branch proposed for a new merge request. An unknown resolver, an invalid field
+combination, or resolution failure is a configuration/repository error;
+Lane-Keeper MUST NOT silently substitute `main` or `master`.
 
 The resolved branch becomes `workflow.target_branch` for Starlark evaluation.
 This lets a repository use a stable declarative alias while retaining the
 actual branch name in output and result metadata.
 
-### 6.2 Workflow checks
+### 14.2 Workflow checks
 
 Each workflow MUST declare a non-empty, ordered `checks` array. Each entry
 names a configured check.
@@ -856,32 +758,10 @@ names a configured check.
 checks = ["branch-ready", "required-tag-present"]
 ```
 
-Preflight evaluates each named predicate once, in array order. Evaluation stops
-at the first not-ready result or error. A workflow is ready only when every
-check passes. `wait` and `watch` MUST reuse this aggregate preflight evaluation;
-they must not implement a separate per-check execution path.
-
-Equivalent active watch:
-
-```text
-reuse/report existing watch
-```
-
-No equivalent active watch:
-
-```text
-create watcher
-```
-
-A persistent daemon is not required initially.
-
-Prefer:
-
-```text
-one detached process per watch
-```
-
-until real usage demonstrates a need for a daemon.
+`readiness check` evaluates each named predicate once, in array order.
+Evaluation stops at the first not-ready result or error. A workflow is ready
+only when every check passes. `readiness await` MUST reuse this aggregate
+evaluation; it must not implement a separate per-check execution path.
 
 ## 15. Out of Scope
 
@@ -889,13 +769,10 @@ The following capabilities are explicitly **not** implemented on the foreseeable
 
 ### 15.1 Global state and daemon
 
-There is no system-wide state store, no persistent daemon, and no global watcher registry.
+There is no system-wide state store, persistent daemon, or background worker.
 
-- Each watch process is repository-local and independent.
 - No cross-repository coordination or resource limits.
-- No global list of active watches.
-- No emergency shutdown mechanism across multiple repositories.
-- Process cleanup is the responsibility of the invoking shell/IDE.
+- `readiness await` remains attached to the invoking terminal or CI process.
 
 This simplification preserves the principle that each repository owns its readiness state.
 
@@ -903,8 +780,7 @@ This simplification preserves the principle that each repository owns its readin
 
 There is no notification delivery mechanism.
 
-- Watch runs in the foreground of the invoking terminal or IDE.
-- State transitions (ready/not-ready) are printed to stdout.
+- Readiness results are printed to stdout.
 - External notification integrations (desktop notifications, Slack, email) belong to the invoking shell/IDE, not to `lane-keeper`.
 
 This preserves the principle that `lane-keeper` is a local tool without external dependencies or side effects.
@@ -928,17 +804,17 @@ The repository-facing task names may remain opinionated and team-specific even t
 Example:
 
 ```toml
-[tasks."check:preflight-main"]
-run = "lane-keeper preflight check deploy"
+[tasks."check:readiness-main"]
+run = "lane-keeper readiness check --workflow deploy"
 
-[tasks."wait:preflight-main"]
-run = "lane-keeper preflight wait deploy"
+[tasks."await:readiness-main"]
+run = "lane-keeper readiness await --workflow deploy"
 
 [tasks."tmpl:branch-name"]
-run = "lane-keeper branch name deploy"
+run = "lane-keeper branch name --workflow deploy"
 
-[tasks."git:create-mr-when-ready"]
-run = "lane-keeper mr create-when-ready deploy"
+[tasks."tmpl:merge-req-message"]
+run = "lane-keeper mr render --workflow deploy"
 ```
 
 This preserves the ADR's intended split between the team-owned tool and repository-owned task exposure.
@@ -952,15 +828,15 @@ GitLab CI should remain intentionally boring.
 Example:
 
 ```yaml
-preflight-main:
+readiness-main:
   script:
-    - mise run check:preflight-main
+        - mise run check:readiness-main
 ```
 
 The CI task must invoke:
 
 ```text
-preflight check
+readiness check
 ```
 
 exactly once.
@@ -968,8 +844,7 @@ exactly once.
 It must never use:
 
 ```text
-wait
-watch
+await
 notification dispatch
 ```
 
@@ -992,7 +867,7 @@ Example:
 [tools]
 lane-keeper = "0.4.2"
 
-[lane-keeper]
+[_.lane-keeper]
 version = 1
 ```
 
@@ -1045,7 +920,7 @@ Human-readable output should be the default.
 Example:
 
 ```text
-preflight: not ready
+readiness: not ready
 workflow: deploy
 target: main
 reason: no baseline tag found on main
@@ -1054,7 +929,7 @@ reason: no baseline tag found on main
 Ready:
 
 ```text
-preflight: ready
+readiness: ready
 workflow: deploy
 target: main
 baseline: v1.42.0
@@ -1094,7 +969,7 @@ allowed:
     read-only Git inspection
     workflow data
     invocation data
-    pass/fail
+    succeed/fail
 
 not allowed by default:
     arbitrary process execution
@@ -1106,7 +981,7 @@ not allowed by default:
     notifications
 ```
 
-Mutation belongs to compiled `lane-keeper` operations after policy evaluation.
+Mutation belongs to the invoking VCS tool, shell, or CI job, not to Lane-Keeper.
 
 ---
 
@@ -1136,13 +1011,13 @@ Implement:
 1. precompiled lane-keeper executable
 2. CLI parser
 3. locate repository root
-4. read [lane-keeper] from mise.toml
+4. read [_.lane-keeper] from mise.toml
 5. validate config schema version
 6. resolve one workflow
 7. parse inline starlark: predicate
 8. expose minimal read-only git API
 9. implement succeed()/fail()
-10. implement `preflight check`
+10. implement `readiness check`
 11. stable human-readable output
 12. stable initial exit-code contract
 13. automated tests
@@ -1151,13 +1026,8 @@ Implement:
 Do not implement yet:
 
 ```text
-wait
-watch
-templates
-branch creation
-GitLab API
-MR creation
-git-lane-keep alias
+await
+workflow template rendering
 ```
 
 Explicitly out of scope (see section 15):
@@ -1190,13 +1060,13 @@ succeed()
 
 [_.lane-keeper.workflows.deploy]
 checks = ["main-ready"]
-target_branch_literal = "main"
+target_branch = { resolve = "literal", value = "main" }
 ```
 
 this command:
 
 ```bash
-lane-keeper preflight check deploy
+lane-keeper readiness check --workflow deploy
 ```
 
 must:
@@ -1216,8 +1086,8 @@ must:
 A repository `mise` task:
 
 ```toml
-[tasks."check:preflight-main"]
-run = "lane-keeper preflight check deploy"
+[tasks."check:readiness-main"]
+run = "lane-keeper readiness check --workflow deploy"
 ```
 
 must invoke exactly the same implementation locally and in GitLab CI.
@@ -1231,10 +1101,10 @@ This proves the ADR's central no-drift requirement.
 After the first increment is proven:
 
 ```text
-1. preflight wait
-2. configurable wait interval
+1. `readiness await`
+2. configurable await interval
 3. interrupt handling
-4. tests proving wait delegates to check/predicate implementation
+4. tests proving await delegates to check/predicate implementation
 ```
 
 No second predicate implementation is allowed.
@@ -1250,9 +1120,9 @@ Add branch identity:
 2. built-in default template
 3. template context generation
 4. immutable source SHA resolution
-5. committer timestamp extraction
+5. commit author date extraction
 6. branch ref validation
-7. `branch name`
+7. `branch name --workflow <workflow>`
 ```
 
 Still no remote mutation required.
@@ -1261,34 +1131,16 @@ Still no remote mutation required.
 
 ## 26. Fourth Increment
 
-Add GitLab mutation:
+Add merge-request message rendering:
 
 ```text
-1. ensure remote branch
-2. explicit SHA conflict detection
-3. ensure matching MR
-4. return MR URL
-5. `mr create-when-ready`
+1. structured title and body templates
+2. resolved target branch in template context
+3. `mr render --workflow <workflow>`
+4. stable human-readable and machine-readable output
 ```
 
-Preserve the ADR's idempotent semantics.
-
----
-
-## 27. Fifth Increment
-
-Add asynchronous developer convenience:
-
-```text
-1. preflight watch
-2. watch identity
-3. detached process
-4. minimal watch state
-5. native system notification
-6. transition-based notification
-```
-
-No IDE plugin required.
+Still no remote mutation.
 
 ---
 
@@ -1304,11 +1156,10 @@ schema-version rejection
 workflow resolution
 predicate source parsing
 Starlark context
-pass/fail result conversion
+succeed/fail result conversion
 Git API wrappers
 template rendering
 branch validation
-watch identity
 ```
 
 ### Integration tests
@@ -1320,25 +1171,7 @@ tag lookup
 diff behavior
 source SHA freezing
 branch naming
-idempotent branch behavior
 ```
-
-### GitLab API tests
-
-Abstract GitLab transport behind a small interface.
-
-Test:
-
-```text
-branch absent
-branch same SHA
-branch wrong SHA
-MR absent
-MR existing
-API failure
-```
-
-without requiring live GitLab for normal test runs.
 
 ### Golden tests
 
@@ -1369,9 +1202,6 @@ internal/
     git/
     template/
     workflow/
-    gitlab/
-    watch/
-    notify/
     output/
 ```
 
@@ -1382,7 +1212,6 @@ The important boundaries are:
 ```text
 policy evaluation
 repository mechanics
-mutation/orchestration
 presentation
 ```
 
@@ -1394,22 +1223,21 @@ The implementation must preserve all of the following:
 
 1. Repository policy remains visible in the consuming repository.
 2. Readiness has exactly one implementation per configured predicate.
-3. CI evaluates each configured predicate once and never waits.
-4. Local wait delegates to the same aggregate preflight.
-5. Watch delegates to the same aggregate preflight.
-6. Preflight policy is read-only.
+3. CI evaluates each configured predicate once and never awaits.
+4. Local await delegates to the same aggregate readiness evaluation.
+5. All Lane-Keeper operations are read-only.
+6. Readiness policy is read-only.
 7. Local tooling is optional.
 8. CI remains authoritative.
-9. The source SHA is frozen before waiting/orchestration.
+9. The source SHA is frozen before awaiting or rendering.
 10. Branch naming is deterministic.
-11. Existing branch at wrong SHA is a conflict.
-12. MR creation is idempotent.
-13. Notifications are out of scope (not implemented).
-14. `lane-keeper` is the canonical executable.
-15. `git lane-keep` is optional convenience.
-16. `mise` is the preferred reproducibility layer, not a mandatory IDE integration layer.
-17. Configuration must not evolve into a generic CI workflow language.
-18. The consuming repository should remain easier to understand than the tool implementation.
+11. Branch and merge-request output is rendered but never applied remotely.
+12. Notifications are out of scope (not implemented).
+13. `lane-keeper` is the canonical executable.
+14. `git lane-keep` is optional convenience.
+15. `mise` is the preferred reproducibility layer, not a mandatory IDE integration layer.
+16. Configuration must not evolve into a generic CI workflow language.
+17. The consuming repository should remain easier to understand than the tool implementation.
 
 ---
 

@@ -10,16 +10,23 @@ version = 1
 
 [_.lane-keeper.defaults]
 remote = "origin"
-wait_interval = "30s"
+await_interval = "30s"
 
-[_.lane-keeper.checks.target-has-baseline-and-benign-changes]
-description = "Target branch has a release baseline and only benign (non-environment-determining) subsequent changes"
+[_.lane-keeper.defaults.template_date_formats]
+releaseStamp = "2006.01.02"
+
+[_.lane-keeper.checks.benign-changes-only-on-target-since-baseline]
+description = "Only benign (non-environment-determining) changes exist on the target branch since its release baseline"
+
+# For highlighted MyST documentation, use a literalinclude directive with
+# language: starlark and the unique start-after/end-before markers below.
 predicate = """
+# starlark:benign-changes-only-on-target-since-baseline:start
 target = workflow.target_branch
 baseline = git.latest_tag(target)
 
 if baseline == None:
-    fail("no baseline tag found on " + target, exit_code = 10)
+    fail("no baseline tag found on %s" % target, exit_code = 10)
 
 diff = git.diff(baseline, target)
 
@@ -59,16 +66,17 @@ for file in diff.files:
         disallowed.append(file)
 
 if not all_benign:
-    fail("non-benign changes detected: " + ", ".join(disallowed), exit_code = 11)
+    fail("non-benign target changes since baseline: %s" % ", ".join(disallowed), exit_code = 11)
 
 succeed()
+# starlark:benign-changes-only-on-target-since-baseline:end
 """
 
 [_.lane-keeper.templates.contribution-branch]
-template = "{{ if .ticket }}{{ .ticket }}-{{ end }}{{ if .environment }}{{ .environment }}{{ else }}notarget-env{{ end }}-{{ .yyMMdd }}-{{ .shortSha }}"
+template = """{{ if .ticket }}{{ .ticket }}-{{ end }}{{ if .environment }}{{ .environment }}{{ else }}notarget-env{{ end }}-{{ .commitAuthorDate | date "yyMMdd" }}-{{ .shortSha }}"""
 
 [_.lane-keeper.templates.merge-request-message]
-title = "{{ if .ticket }}{{ .ticket }}: {{ end }}Prepare {{ if .environment }}{{ .environment }}{{ else }}notarget-env{{ end }} contribution{{ if .version }} version {{ .version }}{{ end }}"
+title = "{{ if .ticket }}{{ .ticket }}: {{ end }}Prepare {{ if .environment }}{{ .environment }}{{ else }}notarget-env{{ end }} contribution{{ if .version }} version{{ .version }}{{ end }}"
 body = """
 Source commit: {{ .shortSha }}
 Target branch: {{ .targetBranch }}
@@ -76,31 +84,27 @@ Target branch: {{ .targetBranch }}
 
 [_.lane-keeper.workflows.release]
 description = "Prepare a release contribution from the current source revision"
-checks = ["target-has-baseline-and-benign-changes"]
+checks = ["benign-changes-only-on-target-since-baseline"]
 remote = "origin"
-target_branch_resolver = "git-remote-head"
+target_branch = { resolve = "git-remote-head" }
 branch_template = "contribution-branch"
 merge_request_template = "merge-request-message"
 
-[_.lane-keeper.workflows.release.wait]
+[_.lane-keeper.workflows.release.await]
 interval = "30s"
 
-[tasks."check:preflight"]
-description = "Evaluate the target-branch preflight once"
-run = "lane-keeper preflight check release"
+[tasks."check:readiness"]
+description = "Evaluate release workflow readiness once"
+run = "lane-keeper readiness check --workflow release"
 
-[tasks."wait:preflight"]
-description = "Wait until the target-branch preflight passes"
-run = "lane-keeper preflight wait release"
+[tasks."await:readiness"]
+description = "Await release workflow readiness"
+run = "lane-keeper readiness await --workflow release"
 
 [tasks."tmpl:branch-name"]
 description = "Render the release contribution branch name"
-run = "lane-keeper branch name release"
+run = "lane-keeper branch name --workflow release"
 
 [tasks."tmpl:merge-req-message"]
 description = "Render the release merge-request title and body"
-run = "lane-keeper mr render release"
-
-[tasks."git:create-mr-when-ready"]
-description = "Create or reuse a merge request after preflight succeeds"
-run = "lane-keeper mr create-when-ready release"
+run = "lane-keeper mr render --workflow release"

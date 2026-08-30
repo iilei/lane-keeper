@@ -12,6 +12,7 @@ hooks = [
 [[repos]]
 repo = "local"
 hooks = [
+    { id = "rumdl-format", name = "format Markdown", entry = "rumdl fmt", language = "system", types = ["markdown"] },
     { id = "rumdl", name = "lint Markdown", entry = "rumdl check", language = "system", types = ["markdown"] },
     { id = "golangci-format", name = "check Go formatting", entry = "golangci-lint fmt --diff", language = "system", files = "(^|/)(go\\.mod|go\\.sum|.*\\.go)$", pass_filenames = false },
     { id = "golangci-lint", name = "lint Go", entry = "golangci-lint run", language = "system", files = "(^|/)(go\\.mod|go\\.sum|.*\\.go)$", pass_filenames = false },

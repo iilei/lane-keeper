@@ -9,6 +9,11 @@ import (
 	"github.com/iilei/lane-keeper/internal/config"
 )
 
+type configIntrospectionResult struct {
+	Errors             []error
+	DateLayoutPreviews []string
+}
+
 func configCheck(args []string) int {
 	fs := flag.NewFlagSet("config-introspection", flag.ContinueOnError)
 	fs.Usage = func() {
@@ -33,9 +38,13 @@ func configCheck(args []string) int {
 
 	allOK := true
 	for _, tomlPath := range files {
-		if errs := introspectConfigFile(context.Background(), tomlPath, *format); len(errs) > 0 {
+		result := introspectConfigFile(context.Background(), tomlPath, *format)
+		for _, preview := range result.DateLayoutPreviews {
+			fprintln(os.Stdout, preview)
+		}
+		if len(result.Errors) > 0 {
 			allOK = false
-			for _, err := range errs {
+			for _, err := range result.Errors {
 				fprintln(os.Stderr, err.Error())
 			}
 		}
@@ -46,23 +55,40 @@ func configCheck(args []string) int {
 	return 0
 }
 
-func introspectConfigFile(ctx context.Context, tomlPath string, format bool) []error {
+func introspectConfigFile(ctx context.Context, tomlPath string, format bool) configIntrospectionResult {
 	content, err := os.ReadFile(tomlPath) //nolint:gosec // command accepts explicit user-provided TOML file paths
 	if err != nil {
-		return []error{fmt.Errorf("read %s: %w", tomlPath, err)}
-	}
-	if !format {
-		return config.CheckPredicatesInFile(tomlPath, string(content))
+		return configIntrospectionResult{Errors: []error{fmt.Errorf("read %s: %w", tomlPath, err)}}
 	}
 
-	result := config.FormatPredicates(ctx, tomlPath, string(content))
-	if len(result.Errors) > 0 || !result.Changed {
-		return result.Errors
+	previews, err := config.PreviewDateLayouts(string(content))
+	if err != nil {
+		return configIntrospectionResult{Errors: []error{fmt.Errorf("%s: %w", tomlPath, err)}}
 	}
-	if err := writeFormattedConfig(tomlPath, result.Content); err != nil {
-		return []error{fmt.Errorf("write %s: %w", tomlPath, err)}
+	result := configIntrospectionResult{DateLayoutPreviews: make([]string, 0, len(previews))}
+	for _, preview := range previews {
+		result.DateLayoutPreviews = append(result.DateLayoutPreviews, fmt.Sprintf(
+			"%s: date layout %q (%q) renders as %q for Go reference time",
+			tomlPath,
+			preview.Name,
+			preview.Layout,
+			preview.Rendered,
+		))
 	}
-	return nil
+	if !format {
+		result.Errors = config.CheckPredicatesInFile(tomlPath, string(content))
+		return result
+	}
+
+	formatResult := config.FormatPredicates(ctx, tomlPath, string(content))
+	if len(formatResult.Errors) > 0 || !formatResult.Changed {
+		result.Errors = formatResult.Errors
+		return result
+	}
+	if err := writeFormattedConfig(tomlPath, formatResult.Content); err != nil {
+		result.Errors = []error{fmt.Errorf("write %s: %w", tomlPath, err)}
+	}
+	return result
 }
 
 func writeFormattedConfig(tomlPath, content string) error {
