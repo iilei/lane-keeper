@@ -168,7 +168,14 @@ diff = git.diff(baseline, target)
 
 if diff.is_empty:
     fail("no relevant changes")
+
+# Later extension: filter changes by file pattern
+for file in diff.files:
+    if is_environment_critical(file):
+        fail("non-benign change: " + file)
 ```
+
+The `diff.files` property (list of changed file paths) is deferred until required by repository policy.
 
 The host API SHOULD grow only when a concrete repository policy requires another primitive.
 
@@ -198,22 +205,22 @@ These operations belong to the compiled `lane-keeper` implementation where appli
 The predicate's responsibility is only:
 
 ```text
-repository state + workflow input
-            |
-            v
-       pass / fail
+                                        / ... ok: pass, exit 0
+(repository state) + (workflow input) -<
+                                        \ not ok: fail, exit !0
 ```
 
-## Result Contract
+Whilst workflow input may or may not imply waiting for a desired state.
+
+### Result Contract
 
 Predicates terminate through host-provided result functions:
 
 ```python
 pass()
-pass({...})
 
 fail("reason")
-fail("reason", {...})
+fail("reason", exit_code=2)
 ```
 
 Examples:
@@ -221,15 +228,11 @@ Examples:
 ```python
 if baseline == None:
     fail("no baseline tag found")
-```
 
-or:
+if not ready:
+    fail("state not ready", exit_code=1)
 
-```python
-pass({
-    "baseline": baseline,
-    "target": target,
-})
+pass()
 ```
 
 The host converts this result into:
@@ -237,7 +240,6 @@ The host converts this result into:
 ```text
 readiness state
 human-readable diagnostics
-optional structured metadata
 stable process exit status
 ```
 

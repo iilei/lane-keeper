@@ -278,7 +278,7 @@ template = """
 title = "{{ if .ticket }}{{ .ticket }}: {{ end }}Prepare {{ .environment }} contribution"
 body = """
 Source commit: {{ .shortSha }}
-Target branch: {{ .target_branch }}
+Target branch: {{ .targetBranch }}
 """
 
 [_.lane-keeper.workflows.deploy]
@@ -445,22 +445,27 @@ The exact API should grow only in response to real repository policy needs.
 
 ### 8.4 Diff result
 
-A `git.diff(...)` result should initially expose only what is required.
-
-Example:
+A `git.diff(...)` result exposes:
 
 ```python
-diff.is_empty
+diff.is_empty         # bool: True if no changes
+diff.files            # list[str]: changed file paths
 ```
 
-Possible later additions:
+Example policy: filter changes by benign file patterns:
 
 ```python
-diff.files
-diff.commit_count
-```
+diff = git.diff(baseline, target)
 
-Do not add them until required.
+if diff.is_empty:
+    fail("no changes since baseline")
+
+for file in diff.files:
+    if is_critical(file):  # application logic
+        fail("non-benign change: " + file)
+
+pass()
+```
 
 ### 8.5 Result functions
 
@@ -468,10 +473,22 @@ The predicate ends through:
 
 ```python
 pass()
-pass({...})
 
 fail("reason")
-fail("reason", {...})
+fail("reason", exit_code=2)
+```
+
+The `exit_code` parameter is optional and must be an integer in the range 1–250 if provided.
+
+If omitted, the default exit code is 1 (predicate not ready).
+
+Suggested semantic meanings (not enforced by the host):
+
+```text
+1   predicate not ready / expected workflow failure (default)
+2   invocation or configuration error
+3   repository state conflict
+4   external service/API failure
 ```
 
 The host converts the result into:
@@ -479,8 +496,7 @@ The host converts the result into:
 ```text
 status
 human-readable message
-structured metadata
-exit code
+exit code (1–250)
 ```
 
 ---
@@ -663,6 +679,11 @@ The timestamp must derive from the immutable source commit's committer timestamp
 
 This ensures retries against the same source commit produce the same branch identity.
 
+TOML configuration keys and Starlark host properties use `snake_case`.
+Template context properties use lower camel case, such as `shortSha` and
+`targetBranch`. `yyMMdd` and `HHmm` are date/time format tokens and retain their
+conventional names.
+
 ### 11.1 Template precedence
 
 ```text
@@ -687,7 +708,7 @@ includes `target_branch` after target-branch resolution.
 title = "{{ .ticket }}: prepare contribution"
 body = """
 Source commit: {{ .shortSha }}
-Target branch: {{ .target_branch }}
+Target branch: {{ .targetBranch }}
 """
 ```
 
@@ -980,19 +1001,33 @@ CI should use the pinned version.
 
 ## 19. Error Model
 
-Use stable exit statuses.
+Predicates return exit codes in the range 0–250.
 
-Suggested initial contract:
+Reserved range: 251–255 (internal tool use only; predicates must not return these).
+
+Normative exit codes:
 
 ```text
 0   predicate passed / operation succeeded
-1   predicate not ready / expected workflow failure
+1   predicate not ready / expected workflow failure (default)
 2   invocation or configuration error
 3   repository state conflict
 4   external service/API failure
 ```
 
-The exact values may change before v1, but once published they become part of the versioned CLI contract.
+Predicates specify the exit code through the optional `exit_code` parameter to `fail()`:
+
+```python
+if git.latest_tag(target) == None:
+    fail("no baseline tag found", exit_code=2)
+
+if branch_already_exists:
+    fail("conflicting branch state", exit_code=3)
+```
+
+If `exit_code` is omitted, the default is 1 (not ready).
+
+Exit codes are stable and part of the versioned CLI contract. Once published in v1.0, they will not change.
 
 The ADR explicitly treats task names, arguments, exit statuses, and machine-readable output as a versioned interface.
 
