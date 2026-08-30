@@ -155,7 +155,7 @@ release:
   draft: false
   replace_existing_draft: true
   make_latest: true
-  mode: replace
+  mode: append
   header: |
     ## Lane-Keeper {{ .Tag }} ({{ .Date }})
 
