@@ -26,7 +26,7 @@ The current executable implements:
   validation of every configured check predicate (regardless of TOML string
   quoting style), and custom date-layout previews;
 - `lane-keeper config-introspection --fmt <toml-files...>` for in-place
-  Buildifier formatting of embedded predicates (limited to the documented
+  [Buildifier](https://github.com/bazel-contrib/buildtools/tree/main/buildifier) formatting of embedded predicates (limited to the documented
   ordinary triple-quoted representation, since splicing requires literal text
   positions);
 - the `git-keep-lane` forwarding executable;
