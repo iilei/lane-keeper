@@ -41,6 +41,29 @@ func TestRunBranchNameRendersAndValidatesBranch(t *testing.T) {
 	}
 }
 
+func TestRunBranchNameRendersJSON(t *testing.T) {
+	paths := branchRepository(t, `{{ if .ticket }}{{ .ticket }}-{{ end }}{{ .environment }}-{{ .shortSha }}`)
+	var stdout, stderr bytes.Buffer
+
+	exitCode := runBranch(
+		context.Background(),
+		[]string{
+			branchNameCommand, workflowFlag, releaseWorkflow, configFlag, paths.configPath,
+			ticketFlag, ticketValue, environmentFlag, stagingEnvironment, outputFlag, jsonFormat,
+		},
+		&stdout,
+		&stderr,
+		func() (string, error) { return paths.repositoryRoot, nil },
+		noEnvironment,
+	)
+	if exitCode != 0 {
+		t.Fatalf("runBranch() exit code = %d, want 0; stderr = %q", exitCode, stderr.String())
+	}
+	if got, want := stdout.String(), `"branchName":"ABC-123-staging-`; !strings.Contains(got, want) {
+		t.Errorf("stdout = %q, want to contain %q", got, want)
+	}
+}
+
 func TestRunBranchNameRejectsInvalidRenderedRef(t *testing.T) {
 	paths := branchRepository(t, `feature/{{ .environment }}//bad`)
 	var stdout, stderr bytes.Buffer

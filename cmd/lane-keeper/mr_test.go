@@ -42,6 +42,33 @@ func TestRunMRRenderRendersTitleAndBody(t *testing.T) {
 	}
 }
 
+func TestRunMRRenderRendersJSON(t *testing.T) {
+	paths := mrRepository(
+		t,
+		`{{ if .ticket }}{{ .ticket }}: {{ end }}Prepare {{ .environment }} contribution`,
+		"Source commit: {{ .shortSha }}\nTarget branch: {{ .targetBranch }}",
+	)
+	var stdout, stderr bytes.Buffer
+
+	exitCode := runMR(
+		context.Background(),
+		[]string{
+			mrRenderCommand, workflowFlag, releaseWorkflow, configFlag, paths.configPath,
+			ticketFlag, ticketValue, environmentFlag, stagingEnvironment, outputFlag, jsonFormat,
+		},
+		&stdout,
+		&stderr,
+		func() (string, error) { return paths.repositoryRoot, nil },
+		noEnvironment,
+	)
+	if exitCode != 0 {
+		t.Fatalf("runMR() exit code = %d, want 0; stderr = %q", exitCode, stderr.String())
+	}
+	if got, want := stdout.String(), `"title":"ABC-123: Prepare staging contribution"`; !strings.Contains(got, want) {
+		t.Errorf("stdout = %q, want to contain %q", got, want)
+	}
+}
+
 func TestRunMRRenderRequiresMergeRequestTemplate(t *testing.T) {
 	paths := noTemplateRepository(t)
 	assertRequiresTemplate(t, paths, func(ctx context.Context, args []string, stdout, stderr *bytes.Buffer) int {

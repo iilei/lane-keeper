@@ -13,6 +13,7 @@ import (
 
 	"github.com/iilei/lane-keeper/internal/config"
 	gitinspect "github.com/iilei/lane-keeper/internal/git"
+	"github.com/iilei/lane-keeper/internal/output"
 	"github.com/iilei/lane-keeper/internal/policy"
 	"github.com/iilei/lane-keeper/internal/workflow"
 )
@@ -47,11 +48,17 @@ func runReadiness(
 	configPath := flags.String("config", "", "Path to a Mise TOML file")
 	environment := flags.String("environment", "", "Optional environment input")
 	ticket := flags.String("ticket", "", "Optional ticket input")
+	outputFormat := flags.String("output", output.FormatText, "Output format: text or json")
 	if err := flags.Parse(args[1:]); err != nil {
 		return usageExitCode
 	}
 	if *workflowName == "" || flags.NArg() != 0 {
 		_, _ = fmt.Fprintln(stderr, "usage: lane-keeper readiness check|await --workflow <name> [--config <path>]")
+		return usageExitCode
+	}
+	format, err := output.ParseFormat(*outputFormat)
+	if err != nil {
+		_, _ = fmt.Fprintf(stderr, "readiness: error: %v\n", err)
 		return usageExitCode
 	}
 
@@ -74,7 +81,10 @@ func runReadiness(
 		_, _ = fmt.Fprintf(stderr, "readiness: error: %v\n", err)
 		return usageExitCode
 	}
-	printReadiness(stdout, &resolved, result)
+	if err := printReadiness(stdout, format, &resolved, result); err != nil {
+		_, _ = fmt.Fprintf(stderr, "readiness: error: %v\n", err)
+		return usageExitCode
+	}
 	if result.Result.Passed {
 		return 0
 	}
@@ -164,22 +174,38 @@ func prepareReadiness(
 	return resolved, inspector, nil
 }
 
-func printReadiness(output io.Writer, resolved *workflow.Resolved, result policy.WorkflowResult) {
+func printReadiness(writer io.Writer, format string, resolved *workflow.Resolved, result policy.WorkflowResult) error {
 	status := "ready"
 	if !result.Result.Passed {
 		status = "not ready"
 	}
+	if format == output.FormatJSON {
+		data := map[string]any{}
+		if result.CheckName != "" {
+			data["check"] = result.CheckName
+		}
+		if result.Result.Reason != "" {
+			data["reason"] = result.Result.Reason
+		}
+		return output.Result{
+			Status:   status,
+			Workflow: resolved.Name,
+			Target:   resolved.TargetBranch,
+			Data:     data,
+		}.WriteJSON(writer)
+	}
 	_, _ = fmt.Fprintf(
-		output,
+		writer,
 		"readiness: %s\nworkflow: %s\ntarget: %s\n",
 		status,
 		resolved.Name,
 		resolved.TargetBranch,
 	)
 	if result.CheckName != "" {
-		_, _ = fmt.Fprintf(output, "check: %s\n", result.CheckName)
+		_, _ = fmt.Fprintf(writer, "check: %s\n", result.CheckName)
 	}
 	if result.Result.Reason != "" {
-		_, _ = fmt.Fprintf(output, "reason: %s\n", result.Result.Reason)
+		_, _ = fmt.Fprintf(writer, "reason: %s\n", result.Result.Reason)
 	}
+	return nil
 }

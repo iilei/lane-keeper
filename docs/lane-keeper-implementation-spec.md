@@ -66,7 +66,9 @@ Current config introspection can:
   `git check-ref-format --branch`, and printing the canonical branch name;
 - run `mr render --workflow <workflow>`, rendering the workflow's configured
   merge-request title and body separately with the same shared template
-  context, and printing both.
+  context, and printing both;
+- render `readiness check`, `readiness await`, `branch name`, and `mr render`
+  output as human-readable text (default) or as stable JSON via `--output json`.
 
 Predicate extraction is currently limited to the documented ordinary
 triple-quoted representation; a TOML-structure-driven extractor remains
@@ -992,7 +994,8 @@ target: main
 baseline: v1.42.0
 ```
 
-A machine-readable mode should be planned:
+A machine-readable mode is implemented as `--output json` on `readiness
+check`, `readiness await`, `branch name`, and `mr render`:
 
 ```bash
 lane-keeper ... --output json
@@ -1010,6 +1013,11 @@ Example:
   }
 }
 ```
+
+`status`, `workflow`, and `target` are always present when applicable; `data`
+carries command-specific fields (`check`/`reason` for readiness,
+`branchName` for `branch name`, `title`/`body` for `mr render`) and omits keys
+with no value. Unknown `--output` values are a usage error.
 
 Do not expose unstable internal implementation details.
 

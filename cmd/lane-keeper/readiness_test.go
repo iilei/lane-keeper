@@ -15,6 +15,8 @@ const (
 	awaitCommand    = "await"
 	checkCommand    = "check"
 	configFlag      = "--config"
+	jsonFormat      = "json"
+	outputFlag      = "--output"
 	releaseWorkflow = "release"
 	workflowFlag    = "--workflow"
 )
@@ -65,6 +67,46 @@ func TestRunReadinessCheckReportsReady(t *testing.T) {
 	}
 	if got, want := stdout.String(), "readiness: ready\nworkflow: release\ntarget: master\n"; got != want {
 		t.Errorf("stdout = %q, want %q", got, want)
+	}
+}
+
+func TestRunReadinessCheckReportsReadyAsJSON(t *testing.T) {
+	paths := readinessRepository(t, "succeed()")
+	var stdout, stderr bytes.Buffer
+
+	exitCode := runReadiness(
+		context.Background(),
+		[]string{checkCommand, workflowFlag, releaseWorkflow, configFlag, paths.configPath, outputFlag, jsonFormat},
+		&stdout,
+		&stderr,
+		func() (string, error) { return paths.repositoryRoot, nil },
+		noEnvironment,
+	)
+	if exitCode != 0 {
+		t.Fatalf("runReadiness() exit code = %d, want 0; stderr = %q", exitCode, stderr.String())
+	}
+	if got, want := stdout.String(), `"status":"ready"`; !strings.Contains(got, want) {
+		t.Errorf("stdout = %q, want to contain %q", got, want)
+	}
+	if got, want := stdout.String(), `"workflow":"release"`; !strings.Contains(got, want) {
+		t.Errorf("stdout = %q, want to contain %q", got, want)
+	}
+}
+
+func TestRunReadinessRejectsUnknownOutputFormat(t *testing.T) {
+	paths := readinessRepository(t, "succeed()")
+	var stdout, stderr bytes.Buffer
+
+	exitCode := runReadiness(
+		context.Background(),
+		[]string{checkCommand, workflowFlag, releaseWorkflow, configFlag, paths.configPath, outputFlag, "xml"},
+		&stdout,
+		&stderr,
+		func() (string, error) { return paths.repositoryRoot, nil },
+		noEnvironment,
+	)
+	if exitCode != usageExitCode {
+		t.Fatalf("runReadiness() exit code = %d, want %d; stderr = %q", exitCode, usageExitCode, stderr.String())
 	}
 }
 

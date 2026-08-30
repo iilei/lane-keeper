@@ -8,6 +8,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/iilei/lane-keeper/internal/output"
 	"github.com/iilei/lane-keeper/internal/template"
 )
 
@@ -34,11 +35,17 @@ func runMR(
 	environment := flags.String("environment", "", "Optional environment input")
 	ticket := flags.String("ticket", "", "Optional ticket input")
 	renderVersion := flags.String("version", "", "Optional version input")
+	outputFormat := flags.String("output", output.FormatText, "Output format: text or json")
 	if err := flags.Parse(args[1:]); err != nil {
 		return usageExitCode
 	}
 	if *workflowName == "" || flags.NArg() != 0 {
 		_, _ = fmt.Fprintln(stderr, "usage: lane-keeper mr render --workflow <name> [--config <path>]")
+		return usageExitCode
+	}
+	format, err := output.ParseFormat(*outputFormat)
+	if err != nil {
+		_, _ = fmt.Fprintf(stderr, "mr: error: %v\n", err)
 		return usageExitCode
 	}
 
@@ -56,22 +63,7 @@ func runMR(
 		return usageExitCode
 	}
 
-	sha, err := inspector.Resolve(ctx, "HEAD")
-	if err != nil {
-		_, _ = fmt.Fprintf(stderr, "mr: error: %v\n", err)
-		return usageExitCode
-	}
-	shortSHA, err := inspector.ShortSHA(ctx, "HEAD")
-	if err != nil {
-		_, _ = fmt.Fprintf(stderr, "mr: error: %v\n", err)
-		return usageExitCode
-	}
-	authorDate, err := inspector.AuthorDate(ctx, "HEAD")
-	if err != nil {
-		_, _ = fmt.Fprintf(stderr, "mr: error: %v\n", err)
-		return usageExitCode
-	}
-	commitDate, err := inspector.CommitDate(ctx, "HEAD")
+	commit, err := resolveCommitContext(ctx, inspector)
 	if err != nil {
 		_, _ = fmt.Fprintf(stderr, "mr: error: %v\n", err)
 		return usageExitCode
@@ -81,11 +73,11 @@ func runMR(
 		Ticket:           *ticket,
 		Environment:      *environment,
 		Version:          *renderVersion,
-		SHA:              sha,
-		ShortSHA:         shortSHA,
+		SHA:              commit.sha,
+		ShortSHA:         commit.shortSHA,
 		TargetBranch:     resolved.TargetBranch,
-		CommitAuthorDate: authorDate,
-		CommitDate:       commitDate,
+		CommitAuthorDate: commit.authorDate,
+		CommitDate:       commit.commitDate,
 	}
 	title, err := templateContext.Render(
 		resolved.MergeRequestTemplateName+"-title",
@@ -105,7 +97,23 @@ func runMR(
 		_, _ = fmt.Fprintf(stderr, "mr: error: %v\n", err)
 		return usageExitCode
 	}
+	title = strings.TrimSpace(title)
+	body = strings.TrimSpace(body)
 
-	_, _ = fmt.Fprintf(stdout, "title: %s\nbody: %s\n", strings.TrimSpace(title), strings.TrimSpace(body))
+	if format == output.FormatJSON {
+		result := output.Result{
+			Status:   "ok",
+			Workflow: *workflowName,
+			Target:   resolved.TargetBranch,
+			Data:     map[string]any{"title": title, "body": body},
+		}
+		if err := result.WriteJSON(stdout); err != nil {
+			_, _ = fmt.Fprintf(stderr, "mr: error: %v\n", err)
+			return usageExitCode
+		}
+		return 0
+	}
+
+	_, _ = fmt.Fprintf(stdout, "title: %s\nbody: %s\n", title, body)
 	return 0
 }
