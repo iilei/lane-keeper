@@ -33,7 +33,7 @@ The design establishes that local and CI behavior must share one readiness imple
 
 This document specifies the target design unless a section explicitly says
 otherwise. The current executable implements `version`, `config-introspection`,
-and `readiness check`; `readiness await`, `branch`, and `mr` remain unimplemented.
+`readiness check`, and `readiness await`; `branch` and `mr` remain unimplemented.
 
 Current config introspection can:
 
@@ -55,11 +55,15 @@ Current config introspection can:
   terminating `succeed()`/`fail()` results;
 - discover repository configuration and run
   `readiness check --workflow <workflow>` with human-readable output and stable
-  predicate exit-code propagation.
+  predicate exit-code propagation;
+- run `readiness await --workflow <workflow>`, re-evaluating the same
+  canonical aggregate readiness check on the configured interval until ready,
+  timeout, or interruption (`SIGINT`/`SIGTERM`), with per-evaluation resource
+  and cancellation budgets kept independent of the overall await timeout.
 
-It does not yet await readiness or render branch and merge-request templates.
-Predicate extraction is currently limited to the documented ordinary
-triple-quoted representation; a TOML-structure-driven extractor remains planned.
+It does not yet render branch and merge-request templates. Predicate
+extraction is currently limited to the documented ordinary triple-quoted
+representation; a TOML-structure-driven extractor remains planned.
 
 ---
 
@@ -1144,7 +1148,9 @@ This proves the ADR's central no-drift requirement.
 
 ## 24. Second Increment
 
-After the first increment is proven:
+Status: implemented (`lane-keeper readiness await`).
+
+The second increment delivered:
 
 ```text
 1. `readiness await`

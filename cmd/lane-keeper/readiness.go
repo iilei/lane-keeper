@@ -6,7 +6,10 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/signal"
 	"path/filepath"
+	"syscall"
+	"time"
 
 	"github.com/iilei/lane-keeper/internal/config"
 	gitinspect "github.com/iilei/lane-keeper/internal/git"
@@ -14,8 +17,15 @@ import (
 	"github.com/iilei/lane-keeper/internal/workflow"
 )
 
+const (
+	checkMode = "check"
+	awaitMode = "await"
+)
+
 func readiness(args []string) int {
-	return runReadiness(context.Background(), args, os.Stdout, os.Stderr, os.Getwd, os.LookupEnv)
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	return runReadiness(ctx, args, os.Stdout, os.Stderr, os.Getwd, os.LookupEnv)
 }
 
 func runReadiness(
@@ -25,12 +35,13 @@ func runReadiness(
 	getwd func() (string, error),
 	lookupEnv func(string) (string, bool),
 ) int {
-	if len(args) == 0 || args[0] != "check" {
-		_, _ = fmt.Fprintln(stderr, "usage: lane-keeper readiness check --workflow <name> [--config <path>]")
+	if len(args) == 0 || (args[0] != checkMode && args[0] != awaitMode) {
+		_, _ = fmt.Fprintln(stderr, "usage: lane-keeper readiness check|await --workflow <name> [--config <path>]")
 		return usageExitCode
 	}
+	mode := args[0]
 
-	flags := flag.NewFlagSet("readiness check", flag.ContinueOnError)
+	flags := flag.NewFlagSet("readiness "+mode, flag.ContinueOnError)
 	flags.SetOutput(stderr)
 	workflowName := flags.String("workflow", "", "Workflow to evaluate")
 	configPath := flags.String("config", "", "Path to a Mise TOML file")
@@ -40,7 +51,7 @@ func runReadiness(
 		return usageExitCode
 	}
 	if *workflowName == "" || flags.NArg() != 0 {
-		_, _ = fmt.Fprintln(stderr, "usage: lane-keeper readiness check --workflow <name> [--config <path>]")
+		_, _ = fmt.Fprintln(stderr, "usage: lane-keeper readiness check|await --workflow <name> [--config <path>]")
 		return usageExitCode
 	}
 
@@ -49,13 +60,16 @@ func runReadiness(
 		_, _ = fmt.Fprintf(stderr, "readiness: error: %v\n", err)
 		return usageExitCode
 	}
-	result, err := policy.EvaluateWorkflow(
-		ctx,
-		&resolved,
-		policy.InputContext{Environment: *environment, Ticket: *ticket},
-		policy.Host{Git: inspector},
-		policy.DefaultLimits(),
-	)
+	input := policy.InputContext{Environment: *environment, Ticket: *ticket}
+	host := policy.Host{Git: inspector}
+	limits := policy.DefaultLimits()
+
+	var result policy.WorkflowResult
+	if mode == awaitMode {
+		result, err = awaitWorkflow(ctx, &resolved, input, host, limits)
+	} else {
+		result, err = policy.EvaluateWorkflow(ctx, &resolved, input, host, limits)
+	}
 	if err != nil {
 		_, _ = fmt.Fprintf(stderr, "readiness: error: %v\n", err)
 		return usageExitCode
@@ -65,6 +79,47 @@ func runReadiness(
 		return 0
 	}
 	return result.Result.ExitCode
+}
+
+// awaitWorkflow evaluates the same canonical aggregate readiness check,
+// sleeping and re-evaluating until ready, timeout, or interruption. The await
+// timeout is tracked independently of ctx so an expiring wall-clock deadline
+// never cancels a predicate evaluation already in progress; only sleeping
+// between evaluations is interrupted by ctx or the timeout.
+func awaitWorkflow(
+	ctx context.Context,
+	resolved *workflow.Resolved,
+	input policy.InputContext,
+	host policy.Host,
+	limits policy.Limits,
+) (policy.WorkflowResult, error) {
+	hasDeadline := resolved.Await.Timeout > 0
+	var deadline time.Time
+	if hasDeadline {
+		deadline = time.Now().Add(resolved.Await.Timeout)
+	}
+	for {
+		result, err := policy.EvaluateWorkflow(ctx, resolved, input, host, limits)
+		if err != nil {
+			return policy.WorkflowResult{}, err
+		}
+		if result.Result.Passed || !hasDeadline {
+			return result, nil
+		}
+		wait := resolved.Await.Interval
+		if remaining := time.Until(deadline); remaining <= 0 {
+			return result, nil
+		} else if remaining < wait {
+			wait = remaining
+		}
+		timer := time.NewTimer(wait)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return result, nil
+		case <-timer.C:
+		}
+	}
 }
 
 func prepareReadiness(
